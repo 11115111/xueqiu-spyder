@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:xueqiu.com)",
+      "WebFetch(domain:github.com)",
+      "Read(//c/Users/20084/.claude/skills/**)",
+      "Bash(python -c \"import py_compile; [py_compile.compile\\(f, doraise=True\\) for f in [''config.py'', ''crawler.py'', ''analyzer.py'', ''report.py'', ''main.py'']]\")",
+      "Bash(pip install requests -q)",
+      "Bash(pip install playwright -q)",
+      "Bash(playwright install chromium)",
+      "Bash(python -c \":*)"
+    ]
+  }
+}

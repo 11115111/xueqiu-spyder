@@ -1,0 +1,17 @@
+# Credentials & secrets
+.cookies.json
+
+# Output reports
+output/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Chrome debug profile
+.chrome-debug-profile/
+
+# Claude Code settings (local)
+.claude/settings.local.json
+.claude/memory/
