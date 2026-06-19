@@ -1,5 +1,7 @@
 # Credentials & secrets
 .cookies.json
+.env
+extract/.env
 
 # Output reports
 output/

@@ -1,0 +1,139 @@
+# 情绪周期发帖标注 taxonomy（外置配置：改分类规则不动代码）
+#
+# 命门：教「行为特征 + 口语线索」，不教关键词匹配。
+# 跑数据发现漏判/误判时，只补 cues / discrimination_rules，不新增 concept。
+
+# 概念枚举（13 个 + 运行时自动允许「未分类」）
+concepts:
+  - name: 破局识别
+    behavior: 打破混沌期高度受限、抵抗负反馈、宣告新周期
+    cues: ["异动不A", "破10天100%", "一口气几个板", "星星之火", "打开空间", "万众瞩目"]
+  - name: 主升龙
+    behavior: 主升段人气最高、带动板块
+    cues: ["一字打开辨识度", "真龙", "人气所向", "主升", "定龙", "加速"]
+  - name: 转点卡位
+    behavior: 龙头分歧/负反馈时逆势站出来、带动回流
+    cues: ["卡位", "穿越节点", "分歧时站出来", "毫无负反馈", "给接力空间", "深水的小弟", "扶一把", "坚定回封"]
+  - name: 弹性套利
+    behavior: 龙头一字时同板块 20/30cm 快补涨
+    cues: ["看A做B", "弹性", "平铺", "20cm", "30cm", "套利", "属性发酵", "高溢价"]
+  - name: 退潮信号
+    behavior: 无新龙头接力、总龙共振下跌、周期结束
+    cues: ["后无救兵", "没有小弟助攻", "高位无力", "出货", "掉队", "破位", "退潮", "不再跟踪"]
+  - name: 中军
+    behavior: 大市值、逻辑硬、走趋势
+    cues: ["中军", "趋势", "机构", "容量", "大资金承载", "走均线"]
+  - name: 抵抗负反馈
+    behavior: 负反馈时死不死、越战越强；反例为没有抵抗、趴下去
+    cues: ["死不死", "越战越强", "砸下去拉回来", "硬", "回封", "没有抵抗", "趴下去", "没人接"]
+  - name: 去弱留强
+    behavior: 两步去弱、留转势的强
+    cues: ["去弱留强", "转势", "弱转强", "腾仓位", "高低切", "主动收抹"]
+  - name: 总龙识别
+    behavior: 贯穿周期、它带动板块（而非被带动）
+    cues: ["总龙", "周期龙", "贯穿", "带动整个板块", "讨论度最高"]
+  - name: 板块画像
+    behavior: 中军/连板龙/补涨龙/小弟结构
+    cues: ["画像", "中军", "连板龙", "补涨龙", "跟风小弟", "梯队"]
+  - name: 情绪节点
+    behavior: 冰点/回暖/高点日内节点
+    cues: ["冰点", "V反", "回暖日", "情绪高点", "暴量", "退潮日", "竞价"]
+  - name: RPS三线红
+    behavior: 相对强度选趋势股
+    cues: ["三线红", "RPS", "相对强度", "90", "93", "95", "趋势股", "产业趋势"]
+  - name: 仓位心态
+    behavior: 仓位/概率/纪律/认知
+    cues: ["334", "试错仓", "不满仓", "梭哈", "复盘做预判", "临盘做跟随", "盈亏比"]
+
+# 关键判别规则（防误判）
+discrimination_rules:
+  - "转点卡位：龙头「负反馈/分歧时」逆势站出来=正例（含金量高）；「顺势连板时」才助攻=反例（含金量低）。最易错，务必判断逆势还是顺势。"
+  - "抵抗负反馈：负反馈时主动收抹/回封=正例；没站出来、随后失去号召力=反例。"
+  - "中军 vs 连板龙：走均线趋势的大市值机构票=中军；走连板的=连板龙，别混。"
+  - "退潮：必须「无新龙头接力 + 板块破位」才算；只是中途分歧不算。"
+  - "总龙：判断「它带动板块」还是「它被板块带动」，前者才是总龙。"
+
+# 周期枚举
+cycles: ["DS-机器人", "化工-创新药", "93-AI硬件", "福建-商业航天", "PCB", "其他", "待定"]
+
+# 极性 / 置信度枚举
+polarities: ["正例", "反例", "中性", "不适用"]
+confidences: ["high", "medium", "low"]
+
+# Few-shot（正例 / 易误判反例 / 无关帖各一）
+few_shot:
+  - input:
+      post_id: A012
+      post_date: "2025-11-10"
+      text: "11月10合富穿越节点及福建题材整体分歧节点，三木下午回封助攻，一个非常标准的转点卡位动作"
+    output:
+      - behavior_summary: "题材整体分歧，合富穿越节点、三木下午回封，逆势带动板块"
+        concepts: ["转点卡位", "抵抗负反馈"]
+        date: "2025-11-10"
+        targets: ["合富", "三木"]
+        cycle: "福建-商业航天"
+        polarity: "正例"
+        polarity_reason: "分歧节点逆势站出来回封"
+        polarity_confidence: "high"
+        scene: "福建题材整体分歧，合富穿越节点，三木回封助攻"
+        key_quote: "一个非常标准的转点卡位动作"
+        judgment: "标准转点卡位，卡成则龙头穿越题材主升"
+        judgment_basis: "分歧时逆势带动板块回流"
+        verification: null
+        error_type: null
+        needs_review: true
+  - input:
+      post_id: A045
+      post_date: null
+      text: "津药强势连板时重药控股的助攻含金量不高，分歧时的新天药业助攻含金量更高。美诺华在华电辽能负反馈时没抵抗，所以后面没有了号召力。"
+    output:
+      - behavior_summary: "连板时重药助攻、分歧时新天助攻、美诺华负反馈时没抵抗的对比"
+        concepts: ["转点卡位"]
+        date: null
+        targets: ["重药控股"]
+        cycle: "其他"
+        polarity: "反例"
+        polarity_reason: "顺势连板时助攻，未克服阻力"
+        polarity_confidence: "high"
+        scene: "津药强势连板时重药助攻"
+        key_quote: "重药控股的助攻含金量不高"
+        judgment: "顺势助攻含金量低"
+        judgment_basis: "连板跟风vs分歧逆势"
+        verification: null
+        error_type: null
+        needs_review: true
+      - behavior_summary: "分歧时新天逆势助攻"
+        concepts: ["转点卡位"]
+        date: null
+        targets: ["新天药业"]
+        cycle: "其他"
+        polarity: "正例"
+        polarity_reason: "分歧时逆势助攻"
+        polarity_confidence: "high"
+        scene: "津药分歧时新天助攻"
+        key_quote: "分歧时的新天药业助攻含金量更高"
+        judgment: "逆势助攻含金量高"
+        judgment_basis: "分歧时站出来"
+        verification: null
+        error_type: null
+        needs_review: true
+      - behavior_summary: "美诺华在关联票负反馈时没抵抗，丧失号召力"
+        concepts: ["抵抗负反馈"]
+        date: null
+        targets: ["美诺华"]
+        cycle: "其他"
+        polarity: "反例"
+        polarity_reason: "负反馈时没站出来"
+        polarity_confidence: "high"
+        scene: "华电辽能负反馈时美诺华没抵抗"
+        key_quote: "美诺华在华电辽能负反馈时没抵抗"
+        judgment: "没经考验则失去号召力"
+        judgment_basis: "负反馈时是否站出来"
+        verification: "后面没有了号召力"
+        error_type: null
+        needs_review: false
+  - input:
+      post_id: A099
+      post_date: null
+      text: "周末愉快，明天继续努力。"
+    output: []

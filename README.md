@@ -148,6 +148,64 @@ WHERE p.user_id = 9548638136;
 
 > 早期已建的数据库会自动补上这两列（仅对之后新写入的帖子填充转发关联）。
 
+## 结构化抽取管道（`extract/`）
+
+把 `posts` 表里的发帖（纯文本）用 LLM 批量抽成固定 schema 的结构化卡片，落到同库并列的
+`cards` 表，支持按「概念 / 周期 / 标的 / 正反例 / 待复核」查询。分类规则全部外置在
+`extract/taxonomy.yaml`，改规则不动代码；LLM 走第三方 **OpenAI 兼容** 接口，换厂商只改环境变量。
+
+### 配置
+
+```bash
+export LLM_BASE_URL=https://your-provider/v1   # 兼容端点，需含 /v1
+export LLM_API_KEY=sk-xxxx
+export LLM_MODEL=your-model-name
+# 可选：LLM_TEMPERATURE(默认0) / LLM_CONCURRENCY(默认5) / LLM_MAX_RETRIES / LLM_TIMEOUT_S
+```
+
+参见 `extract/.env.example`。分类口径见 `extract/taxonomy.yaml`（概念枚举 + 口语线索 + few-shot）。
+
+### 运行
+
+```bash
+# 小批校准：先跑 30 条，人工看 needs_review 再调 taxonomy.yaml
+python -m extract run --limit 30
+
+# 全量抽取（只处理未完成/失败的，幂等可重跑）
+python -m extract run
+
+# 只重试失败的；或全量重抽（覆盖已完成）
+python -m extract run --only-failed
+python -m extract run --reset
+
+# 进度与概念分布
+python -m extract stats
+
+# 导出待复核队列（或按维度查询）
+python -m extract review --out ./output/review.md
+python -m extract review --concept 转点卡位 --polarity 反例 --all --out ./output/卡位反例.md
+```
+
+- 一条帖 → 一次 LLM 调用 → 0..N 张卡（长复盘帖含多个「标的×节点」事件）。
+- 幂等：以 `post_id` 为键，重跑先删旧卡再插；断点续跑按 `extract_status` 只处理未完成/失败的。
+- 解析失败/超时不崩，落 `failed` 表可重试。
+
+### 查询卡片
+
+```sql
+-- 某概念的所有反例
+SELECT post_id, targets, key_quote, judgment FROM cards
+WHERE list_contains(concepts, '转点卡位') AND polarity = '反例';
+
+-- 待人工复核队列
+SELECT * FROM cards WHERE needs_review;
+
+-- 某标的的全部出现
+SELECT * FROM cards WHERE list_contains(targets, '合富');
+```
+
+> 抽取的判断是对原帖观点的结构化，不构成投资建议；低置信度项（`needs_review`）须人工复核。
+
 ## 示例
 
 ```bash
