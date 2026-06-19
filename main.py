@@ -128,9 +128,10 @@ def run_user(user_id, max_pages=10, days=None, crawl_all=False, db_path=None,
         with PostStore(db_path) as store:
             if all_posts:
                 store.save_posts(all_posts, user_id=user_id, screen_name=screen_name)
-                store.save_user(user_id, screen_name, post_count=len(all_posts))
             store.set_crawl_state(user_id, next_page, completed)
+            # post_count 记录库内该用户累计条数，与 posts 表对齐（而非仅本批）
             total = store.count_posts(user_id)
+            store.save_user(user_id, screen_name, post_count=total)
 
         if completed:
             logger.info(f"已抓完，写入 DuckDB: {db_path}（该用户累计 {total} 条）")

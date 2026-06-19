@@ -101,7 +101,7 @@ python main.py search <关键词>
 
 - 默认数据库文件：`./xueqiu.duckdb`（已在 `.gitignore` 中排除）
 - 表 `posts`：以 `post_id` 为主键**幂等去重**，重复爬取只会更新不会重复插入；含清洗后的纯文本 `text`、原始 HTML `description`、是否专栏 `is_column`、互动数据（评论/点赞/转发/收藏/浏览）、`raw_json` 完整原始字段等
-- 表 `users`：记录用户名、帖子数、最近抓取时间
+- 表 `users`：记录用户名、`post_count`（该用户在 `posts` 表中的累计条数，与 `SELECT count(*) FROM posts WHERE user_id=...` 对齐）、最近抓取时间，以及断点续爬状态 `resume_page` / `last_status`
 
 ### 去重
 
