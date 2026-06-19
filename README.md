@@ -50,12 +50,14 @@ python main.py stock <股票代码> [--min-reply 20] [--max-pages 20] [--output 
 ### 用户帖子爬取
 
 ```bash
-python main.py user <用户ID或用户名> [--max-pages 10] [--all] [--days 30] [--column] [--output ./output]
+python main.py user <用户ID或用户名> [--max-pages 10] [--all] [--days 30] [--column] [--output ./output] [--db ./xueqiu.duckdb] [--no-db]
 ```
 
 - `--all` 爬取该用户**全部**帖子，翻到没有更多为止（忽略 `--max-pages`，受 `config.MAX_USER_PAGES` 上限保护）
 - `--column` 仅抓取专栏文章
 - `--days N` 只保留最近 N 天的帖子；配合翻页时命中时间下限会自动提前停止，减少请求
+- `--db PATH` 指定 DuckDB 数据库文件路径（默认 `./xueqiu.duckdb`）
+- `--no-db` 本次不写入数据库
 - 支持直接传用户名，会自动搜索解析为数字ID
 
 > **反封禁说明**：爬取用户全部帖子时内置了节流策略——每次请求带随机抖动间隔、
@@ -68,6 +70,28 @@ python main.py user <用户ID或用户名> [--max-pages 10] [--all] [--days 30] 
 
 ```bash
 python main.py search <关键词>
+```
+
+## 数据存储（DuckDB）
+
+爬取用户帖子时，**完整抓取结果**（未经 `--days`/`--column` 过滤）会自动写入 DuckDB，
+便于后续做 SQL 分析或增量积累历史数据：
+
+- 默认数据库文件：`./xueqiu.duckdb`（已在 `.gitignore` 中排除）
+- 表 `posts`：以 `post_id` 为主键**幂等去重**，重复爬取只会更新不会重复插入；含清洗后的纯文本 `text`、原始 HTML `description`、互动数据（评论/点赞/转发/收藏/浏览）、`raw_json` 完整原始字段等
+- 表 `users`：记录用户名、帖子数、最近抓取时间
+
+直接用 DuckDB 查询，例如：
+
+```bash
+python -c "import duckdb; print(duckdb.connect('xueqiu.duckdb').sql('SELECT screen_name, count(*) FROM posts GROUP BY 1'))"
+```
+
+```sql
+-- 某用户点赞最高的 10 条帖子
+SELECT created_at, like_count, reply_count, text
+FROM posts WHERE user_id = 9548638136
+ORDER BY like_count DESC LIMIT 10;
 ```
 
 ## 示例

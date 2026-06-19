@@ -4,6 +4,10 @@
 # Output reports
 output/
 
+# DuckDB 数据库
+*.duckdb
+*.duckdb.wal
+
 # Python
 __pycache__/
 *.pyc

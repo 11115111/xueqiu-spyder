@@ -75,7 +75,8 @@ def run(symbol, min_reply_count=None, max_pages=None, output_dir=None):
         crawler.close()
 
 
-def run_user(user_id, max_pages=10, output_dir=None, days=None, column_only=False, crawl_all=False):
+def run_user(user_id, max_pages=10, output_dir=None, days=None, column_only=False,
+             crawl_all=False, db_path=None):
     """爬取指定用户的帖子并生成报告。user_id 可以是数字ID或用户名。"""
     if output_dir is None:
         output_dir = config.DEFAULT_OUTPUT_DIR
@@ -105,6 +106,14 @@ def run_user(user_id, max_pages=10, output_dir=None, days=None, column_only=Fals
         if not all_posts:
             logger.warning("未获取到任何帖子")
             return None
+
+        # 持久化到 DuckDB（存储未经时间/专栏过滤的完整抓取结果，按 post_id 幂等去重）
+        if db_path:
+            from storage import PostStore
+            with PostStore(db_path) as store:
+                store.save_posts(all_posts, user_id=user_id, screen_name=screen_name)
+                store.save_user(user_id, screen_name, post_count=len(all_posts))
+                logger.info(f"DuckDB 当前累计该用户 {store.count_posts(user_id)} 条帖子")
 
         # 按时间过滤
         if days:
@@ -183,6 +192,9 @@ def main():
     sp_user.add_argument("--days", type=int, default=None, help="只保留最近N天的帖子")
     sp_user.add_argument("--column", action="store_true", help="仅抓取专栏文章")
     sp_user.add_argument("--output", default=config.DEFAULT_OUTPUT_DIR)
+    sp_user.add_argument("--db", default=config.DUCKDB_PATH,
+                         help=f"DuckDB 数据库文件路径（默认 {config.DUCKDB_PATH}）")
+    sp_user.add_argument("--no-db", action="store_true", help="不写入 DuckDB")
 
     # search 子命令
     sp_search = subparsers.add_parser("search", help="搜索雪球用户")
@@ -198,7 +210,10 @@ def main():
         if args.command == "stock":
             result = run(args.symbol, args.min_reply, args.max_pages, args.output)
         elif args.command == "user":
-            result = run_user(args.user_id, args.max_pages, args.output, getattr(args, 'days', None), getattr(args, 'column', False), getattr(args, 'all', False))
+            db_path = None if getattr(args, 'no_db', False) else getattr(args, 'db', None)
+            result = run_user(args.user_id, args.max_pages, args.output,
+                              getattr(args, 'days', None), getattr(args, 'column', False),
+                              getattr(args, 'all', False), db_path)
         elif args.command == "search":
             run_search(args.keyword)
             return

@@ -28,3 +28,6 @@ USER_AGENT = (
 
 # Output
 DEFAULT_OUTPUT_DIR = "./output"
+
+# DuckDB 存储
+DUCKDB_PATH = "./xueqiu.duckdb"
