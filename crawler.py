@@ -3,6 +3,8 @@ import re
 import logging
 import subprocess
 import os
+import sys
+import shutil
 import urllib.parse
 from playwright.sync_api import sync_playwright
 
@@ -10,11 +12,61 @@ import config
 
 logger = logging.getLogger(__name__)
 
-CHROME_PATH = os.path.expandvars(
-    r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
-)
 USER_DATA_DIR = os.path.join(os.path.dirname(__file__), ".chrome-debug-profile")
 DEBUG_PORT = 9222
+
+
+def _find_chrome():
+    """跨平台查找 Chrome/Chromium 可执行文件路径"""
+    # 1. 允许通过环境变量显式指定
+    env_path = os.environ.get("CHROME_PATH")
+    if env_path and os.path.isfile(env_path):
+        return env_path
+
+    candidates = []
+    if sys.platform.startswith("win"):
+        # Windows 常见安装位置（用户级 + 系统级）
+        for var in ("LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)"):
+            base = os.environ.get(var)
+            if base:
+                candidates.append(
+                    os.path.join(base, r"Google\Chrome\Application\chrome.exe")
+                )
+                candidates.append(
+                    os.path.join(base, r"Google\Chrome Beta\Application\chrome.exe")
+                )
+                candidates.append(
+                    os.path.join(base, r"Microsoft\Edge\Application\msedge.exe")
+                )
+    elif sys.platform == "darwin":
+        candidates += [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        ]
+    else:
+        # Linux：先查 PATH，再查常见绝对路径
+        for name in ("google-chrome", "google-chrome-stable", "chromium",
+                     "chromium-browser", "microsoft-edge"):
+            found = shutil.which(name)
+            if found:
+                return found
+        candidates += [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/snap/bin/chromium",
+        ]
+
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+CHROME_PATH = _find_chrome()
 
 
 class CrawlerError(Exception):
@@ -61,6 +113,13 @@ class XueqiuCrawler:
 
     def _launch_chrome(self):
         """以调试模式启动 Chrome"""
+        if not CHROME_PATH:
+            raise CrawlerError(
+                "未找到 Chrome 可执行文件。请安装 Google Chrome，"
+                "或通过环境变量 CHROME_PATH 指定 chrome.exe 的完整路径。\n"
+                "例如 (Windows PowerShell):\n"
+                r'  $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"'
+            )
         cmd = [
             CHROME_PATH,
             f"--remote-debugging-port={DEBUG_PORT}",
@@ -68,7 +127,13 @@ class XueqiuCrawler:
             "--no-first-run",
             "https://xueqiu.com/",
         ]
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except FileNotFoundError:
+            raise CrawlerError(
+                f"无法启动 Chrome (路径: {CHROME_PATH})。"
+                "请确认 Chrome 已正确安装，或通过环境变量 CHROME_PATH 指定其完整路径。"
+            )
 
     def _fetch_json(self, url, params=None):
         """在浏览器内 fetch API，返回 JSON"""

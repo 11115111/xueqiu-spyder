@@ -11,7 +11,15 @@
 ## 前置条件
 
 - Python 3.9+
-- Chrome 浏览器（用于获取 Cookie）
+- Chrome 浏览器（用于连接调试端口爬取数据）
+
+> 程序会自动在常见安装位置查找 Chrome（Windows 的用户级与系统级目录、macOS 的 Applications、Linux 的 PATH 与常见路径）。
+> 如果 Chrome 安装在非默认位置导致找不到，可通过环境变量 `CHROME_PATH` 指定可执行文件完整路径，例如：
+>
+> ```powershell
+> # Windows PowerShell
+> $env:CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
+> ```
 
 ## 安装
 
