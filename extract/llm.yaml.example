@@ -15,6 +15,6 @@ llm:
   max_retries: 3
   timeout_s: 60
   # prompt 缓存：长且稳定的 system prompt 作为可缓存前缀，降本提速。
-  #   off       —— OpenAI/DeepSeek 等会按相同前缀「自动」缓存，无需设置
-  #   anthropic —— 给 system 注入 cache_control（Anthropic 风格端点需要）
+  #   off       —— 不注入缓存声明。OpenAI/DeepSeek 等仍会按相同前缀「自动」缓存
+  #   on        —— 给 system 注入 cache_control（Anthropic 等需显式声明的端点用；anthropic 为其别名）
   prompt_cache: off

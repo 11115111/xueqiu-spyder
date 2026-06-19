@@ -168,14 +168,15 @@ llm:
   rpm: 0              # 每分钟请求数上限（客户端限流），0=不限；按厂商配额设
   max_retries: 3
   timeout_s: 60
-  prompt_cache: off   # off | anthropic
+  prompt_cache: off   # off | on
 ```
 
 > **prompt 缓存**：抽取走「单帖单调用」，但那段又长又固定的 system prompt 每次都一样，
 > 作为**可缓存前缀**能大幅降本提速。
-> - `off`：OpenAI / DeepSeek 等会按相同前缀**自动**缓存，无需额外设置；
-> - `anthropic`：给 system 注入 `cache_control`（Anthropic 风格端点需要显式声明）。
+> - `off`：不注入缓存声明。OpenAI / DeepSeek 等仍会按相同前缀**自动**缓存（无需设置，off 也照样命中）；
+> - `on`：给 system 注入 `cache_control`（Anthropic 等需要显式声明的端点用；`anthropic` 是其别名）。
 >
+> 说明：自动缓存型厂商没有「客户端开关」，`on` 能做的就是注入 `cache_control`；用这类厂商保持 `off` 即可。
 > 运行结束会打印 token 用量与缓存命中率（`prompt / 缓存命中 / completion`），可据此确认缓存是否生效。
 
 > **限流**：`concurrency` 控制并发在飞数，`rpm` 控制每分钟请求总数（跨线程平滑起始时刻）。

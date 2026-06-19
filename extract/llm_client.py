@@ -20,6 +20,8 @@ import requests
 logger = logging.getLogger(__name__)
 
 _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+# prompt_cache 取这些值时，显式给 system 注入 cache_control（Anthropic 风格）
+_CACHE_EXPLICIT = {"on", "anthropic", "explicit", "ephemeral", "true", "1"}
 
 
 class LLMError(Exception):
@@ -75,12 +77,13 @@ class LLMClient:
                       "completion_tokens": 0}
 
     def _system_message(self, system):
-        """构造 system 消息；prompt_cache=anthropic 时注入 cache_control。
+        """构造 system 消息；显式开启缓存时给 system 注入 cache_control。
 
-        长且稳定的 system prompt 作为可缓存前缀：OpenAI/DeepSeek 等会自动按前缀缓存；
-        Anthropic 风格端点需显式 cache_control，故按需注入。
+        长且稳定的 system prompt 作为可缓存前缀：OpenAI/DeepSeek 等会自动按前缀缓存
+        （无需任何设置，off 也照样命中）；Anthropic 风格端点需显式 cache_control，
+        故 prompt_cache 设为 on/anthropic 时注入。
         """
-        if str(getattr(self.cfg, "prompt_cache", "off")).lower() == "anthropic":
+        if str(getattr(self.cfg, "prompt_cache", "off")).strip().lower() in _CACHE_EXPLICIT:
             return {
                 "role": "system",
                 "content": [
