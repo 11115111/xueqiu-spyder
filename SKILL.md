@@ -1,6 +1,6 @@
 ---
 name: xueqiu-spyder
-description: 爬取雪球(Xueqiu)个股热门讨论，通过评论数筛选大V，汇总其对该股票的观点并生成报告。也可爬取指定大V用户的全部帖子。当用户需要查看某只股票的大V观点、市场情绪分析、或某位大V的发帖记录时使用。
+description: 爬取雪球(Xueqiu)个股热门讨论，通过评论数筛选大V，汇总其对该股票的观点并生成报告。也可爬取指定大V用户的全部帖子并存入 DuckDB。当用户需要查看某只股票的大V观点、市场情绪分析、或某位大V的发帖记录时使用。
 ---
 
 # 雪球爬虫工具
@@ -22,10 +22,11 @@ python main.py stock <股票代码> [--min-reply 20] [--max-pages 20] [--output 
 ### 2. 用户帖子爬取
 
 ```bash
-python main.py user <用户ID或用户名> [--max-pages 10] [--days 30] [--column] [--output ./output]
+python main.py user <用户ID或用户名> [--max-pages 10] [--all] [--days 30] [--full-text] [--db ./xueqiu.duckdb] [--no-db]
 ```
 
 支持直接传用户名（如 `治雨`），会自动搜索并解析为数字ID。也可传数字ID。
+用户帖子**直接写入 DuckDB，不再生成 Markdown 文件**；需要筛选时用 SQL 查询 `posts` 表。
 
 ### 3. 搜索用户
 
@@ -37,10 +38,11 @@ python main.py search <关键词>
 
 ```bash
 python main.py stock SZ002738 --min-reply 20 --max-pages 10
-python main.py user 治雨 --column --max-pages 20
+python main.py user 治雨 --all --full-text
 python main.py user 9548638136 --days 30
 python main.py search 治雨
 ```
 
 ## 输出
-在 `./output/` 目录下生成 Markdown 报告。
+- 股票大V观点：在 `./output/` 目录下生成 Markdown 报告。
+- 用户帖子：写入 DuckDB（默认 `./xueqiu.duckdb`），表 `posts`/`users`，按 `post_id` 幂等去重。

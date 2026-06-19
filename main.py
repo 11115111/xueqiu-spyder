@@ -5,8 +5,8 @@ import time
 
 import config
 from crawler import XueqiuCrawler, CrawlerError
-from analyzer import filter_big_v, extract_opinions, summarize_opinions, posts_to_opinions
-from report import generate_report, generate_user_report
+from analyzer import filter_big_v, extract_opinions, summarize_opinions
+from report import generate_report
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,12 +75,8 @@ def run(symbol, min_reply_count=None, max_pages=None, output_dir=None):
         crawler.close()
 
 
-def run_user(user_id, max_pages=10, output_dir=None, days=None, column_only=False,
-             crawl_all=False, db_path=None):
-    """爬取指定用户的帖子并生成报告。user_id 可以是数字ID或用户名。"""
-    if output_dir is None:
-        output_dir = config.DEFAULT_OUTPUT_DIR
-
+def run_user(user_id, max_pages=10, days=None, crawl_all=False, db_path=None, full_text=False):
+    """爬取指定用户的全部帖子并存入 DuckDB。user_id 可以是数字ID或用户名。"""
     crawler = XueqiuCrawler()
 
     try:
@@ -107,45 +103,23 @@ def run_user(user_id, max_pages=10, output_dir=None, days=None, column_only=Fals
             logger.warning("未获取到任何帖子")
             return None
 
-        # 持久化到 DuckDB（存储未经时间/专栏过滤的完整抓取结果，按 post_id 幂等去重）
-        if db_path:
-            from storage import PostStore
-            with PostStore(db_path) as store:
-                store.save_posts(all_posts, user_id=user_id, screen_name=screen_name)
-                store.save_user(user_id, screen_name, post_count=len(all_posts))
-                logger.info(f"DuckDB 当前累计该用户 {store.count_posts(user_id)} 条帖子")
+        # 可选：补全被截断的长文全文（会额外访问详情页，请求量更大）
+        if full_text:
+            logger.info("正在补全帖子全文...")
+            crawler.enrich_posts_full_text(all_posts)
 
-        # 按时间过滤
-        if days:
-            cutoff_ms = (time.time() - days * 86400) * 1000
-            before = len(all_posts)
-            all_posts = [p for p in all_posts if (p.get("created_at") or 0) >= cutoff_ms]
-            logger.info(f"时间过滤: 最近 {days} 天，{before} -> {len(all_posts)} 条")
-            if not all_posts:
-                logger.warning("过滤后无帖子")
-                return None
+        if not db_path:
+            logger.warning("已禁用 DuckDB 写入（--no-db），本次不落库")
+            return None
 
-        # 仅保留专栏文章
-        if column_only:
-            before = len(all_posts)
-            all_posts = [p for p in all_posts if p.get("is_column")]
-            logger.info(f"专栏过滤: {before} -> {len(all_posts)} 条")
-            if not all_posts:
-                logger.warning("过滤后无专栏文章")
-                return None
-
-        # 补全被截断的帖子全文
-        logger.info("正在获取帖子全文...")
-        crawler.enrich_posts_full_text(all_posts)
-
-        # 转为 Opinion 并按时间倒序排列
-        opinions = posts_to_opinions(all_posts)
-        opinions.sort(key=lambda o: o.created_at, reverse=True)
-        logger.info(f"有效帖子: {len(opinions)} 条")
-
-        filepath = generate_user_report(screen_name, user_id, opinions, output_dir)
-        logger.info(f"报告已生成: {filepath}")
-        return filepath
+        # 持久化到 DuckDB（按 post_id 幂等去重）
+        from storage import PostStore
+        with PostStore(db_path) as store:
+            store.save_posts(all_posts, user_id=user_id, screen_name=screen_name)
+            store.save_user(user_id, screen_name, post_count=len(all_posts))
+            total = store.count_posts(user_id)
+        logger.info(f"已写入 DuckDB: {db_path}（该用户累计 {total} 条）")
+        return db_path
     finally:
         crawler.close()
 
@@ -189,9 +163,9 @@ def main():
     sp_user.add_argument("user_id", help="用户ID或用户名（用户名会自动搜索解析）")
     sp_user.add_argument("--max-pages", type=int, default=10)
     sp_user.add_argument("--all", action="store_true", help="爬取该用户全部帖子（忽略 --max-pages，翻到没有更多为止）")
-    sp_user.add_argument("--days", type=int, default=None, help="只保留最近N天的帖子")
-    sp_user.add_argument("--column", action="store_true", help="仅抓取专栏文章")
-    sp_user.add_argument("--output", default=config.DEFAULT_OUTPUT_DIR)
+    sp_user.add_argument("--days", type=int, default=None, help="只爬最近N天（命中时间下限即提前停止翻页）")
+    sp_user.add_argument("--full-text", action="store_true",
+                         help="补全被截断的长文全文（会额外访问详情页，请求量更大）")
     sp_user.add_argument("--db", default=config.DUCKDB_PATH,
                          help=f"DuckDB 数据库文件路径（默认 {config.DUCKDB_PATH}）")
     sp_user.add_argument("--no-db", action="store_true", help="不写入 DuckDB")
@@ -211,9 +185,9 @@ def main():
             result = run(args.symbol, args.min_reply, args.max_pages, args.output)
         elif args.command == "user":
             db_path = None if getattr(args, 'no_db', False) else getattr(args, 'db', None)
-            result = run_user(args.user_id, args.max_pages, args.output,
-                              getattr(args, 'days', None), getattr(args, 'column', False),
-                              getattr(args, 'all', False), db_path)
+            result = run_user(args.user_id, args.max_pages,
+                              getattr(args, 'days', None), getattr(args, 'all', False),
+                              db_path, getattr(args, 'full_text', False))
         elif args.command == "search":
             run_search(args.keyword)
             return
@@ -222,9 +196,12 @@ def main():
             sys.exit(1)
 
         if result:
-            print(f"\n报告已保存到: {result}")
+            if args.command == "user":
+                print(f"\n数据已写入 DuckDB: {result}")
+            else:
+                print(f"\n报告已保存到: {result}")
         else:
-            print("\n未生成报告")
+            print("\n未生成结果")
             sys.exit(1)
     except CrawlerError as e:
         logger.error(f"爬取失败: {e}")

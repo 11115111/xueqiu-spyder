@@ -50,14 +50,16 @@ python main.py stock <股票代码> [--min-reply 20] [--max-pages 20] [--output 
 ### 用户帖子爬取
 
 ```bash
-python main.py user <用户ID或用户名> [--max-pages 10] [--all] [--days 30] [--column] [--output ./output] [--db ./xueqiu.duckdb] [--no-db]
+python main.py user <用户ID或用户名> [--max-pages 10] [--all] [--days 30] [--full-text] [--db ./xueqiu.duckdb] [--no-db]
 ```
 
+> 用户帖子**直接写入 DuckDB，不再生成 Markdown 文件**。需要任何视图/过滤都用 SQL 查询数据库即可。
+
 - `--all` 爬取该用户**全部**帖子，翻到没有更多为止（忽略 `--max-pages`，受 `config.MAX_USER_PAGES` 上限保护）
-- `--column` 仅抓取专栏文章
-- `--days N` 只保留最近 N 天的帖子；配合翻页时命中时间下限会自动提前停止，减少请求
+- `--days N` 只爬最近 N 天，命中时间下限即提前停止翻页，减少请求
+- `--full-text` 补全被截断的长文全文（会额外访问详情页，请求量更大）
 - `--db PATH` 指定 DuckDB 数据库文件路径（默认 `./xueqiu.duckdb`）
-- `--no-db` 本次不写入数据库
+- `--no-db` 本次不写入数据库（仅爬取，不落库）
 - 支持直接传用户名，会自动搜索解析为数字ID
 
 > **反封禁说明**：爬取用户全部帖子时内置了节流策略——每次请求带随机抖动间隔、
@@ -74,14 +76,13 @@ python main.py search <关键词>
 
 ## 数据存储（DuckDB）
 
-爬取用户帖子时，**完整抓取结果**（未经 `--days`/`--column` 过滤）会自动写入 DuckDB，
-便于后续做 SQL 分析或增量积累历史数据：
+用户帖子的抓取结果会写入 DuckDB（用户命令唯一的输出），便于后续做 SQL 分析或增量积累历史数据：
 
 - 默认数据库文件：`./xueqiu.duckdb`（已在 `.gitignore` 中排除）
-- 表 `posts`：以 `post_id` 为主键**幂等去重**，重复爬取只会更新不会重复插入；含清洗后的纯文本 `text`、原始 HTML `description`、互动数据（评论/点赞/转发/收藏/浏览）、`raw_json` 完整原始字段等
+- 表 `posts`：以 `post_id` 为主键**幂等去重**，重复爬取只会更新不会重复插入；含清洗后的纯文本 `text`、原始 HTML `description`、是否专栏 `is_column`、互动数据（评论/点赞/转发/收藏/浏览）、`raw_json` 完整原始字段等
 - 表 `users`：记录用户名、帖子数、最近抓取时间
 
-直接用 DuckDB 查询，例如：
+需要按时间、专栏等维度筛选时，直接用 SQL 查询，例如：
 
 ```bash
 python -c "import duckdb; print(duckdb.connect('xueqiu.duckdb').sql('SELECT screen_name, count(*) FROM posts GROUP BY 1'))"
@@ -92,6 +93,12 @@ python -c "import duckdb; print(duckdb.connect('xueqiu.duckdb').sql('SELECT scre
 SELECT created_at, like_count, reply_count, text
 FROM posts WHERE user_id = 9548638136
 ORDER BY like_count DESC LIMIT 10;
+
+-- 某用户最近 30 天的专栏文章
+SELECT created_at, title, text FROM posts
+WHERE user_id = 9548638136 AND is_column
+  AND created_at >= now() - INTERVAL 30 DAY
+ORDER BY created_at DESC;
 ```
 
 ## 示例
@@ -100,8 +107,8 @@ ORDER BY like_count DESC LIMIT 10;
 # 爬取大族激光的大V观点
 python main.py stock SZ002738 --min-reply 20 --max-pages 10
 
-# 爬取用户"治雨"的全部专栏
-python main.py user 治雨 --column --max-pages 20
+# 爬取用户"治雨"的全部帖子并存入 DuckDB（含长文全文）
+python main.py user 治雨 --all --full-text
 
 # 爬取用户最近30天的帖子
 python main.py user 9548638136 --days 30
