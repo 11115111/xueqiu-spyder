@@ -28,6 +28,7 @@ class LLMConfig:
     concurrency: int = 5
     max_retries: int = 3
     timeout_s: int = 60
+    rpm: int = 0   # 每分钟请求数上限（客户端限流），0 表示不限
 
     @classmethod
     def load(cls, path=None):
@@ -59,6 +60,7 @@ class LLMConfig:
             concurrency=pick("concurrency", "LLM_CONCURRENCY", int, 5),
             max_retries=pick("max_retries", "LLM_MAX_RETRIES", int, 3),
             timeout_s=pick("timeout_s", "LLM_TIMEOUT_S", int, 60),
+            rpm=pick("rpm", "LLM_RPM", int, 0),
         )
 
     @classmethod
@@ -72,6 +74,7 @@ class LLMConfig:
             concurrency=int(_env("LLM_CONCURRENCY", "5") or 5),
             max_retries=int(_env("LLM_MAX_RETRIES", "3") or 3),
             timeout_s=int(_env("LLM_TIMEOUT_S", "60") or 60),
+            rpm=int(_env("LLM_RPM", "0") or 0),
         )
 
     def validate(self):

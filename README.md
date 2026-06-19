@@ -164,10 +164,15 @@ llm:
   api_key: sk-xxxx
   model: your-model-name
   temperature: 0      # 可选，默认 0
-  concurrency: 5      # 可选，默认 5
+  concurrency: 5      # 同时在飞的请求数上限
+  rpm: 0              # 每分钟请求数上限（客户端限流），0=不限；按厂商配额设
   max_retries: 3
   timeout_s: 60
 ```
+
+> **限流**：`concurrency` 控制并发在飞数，`rpm` 控制每分钟请求总数（跨线程平滑起始时刻）。
+> 命中 `429/5xx` 会优先按服务端 `Retry-After` 退避、否则指数退避，重试本身也受 `rpm` 约束。
+> 厂商有 RPM 配额时设 `rpm`（如每分钟 60 就填 60），可显著减少被限流。
 
 `llm.yaml` 含密钥，已在 `.gitignore` 中排除。优先级 **环境变量 > llm.yaml > 默认值**——
 想让密钥不落盘，可只在文件里写 `base_url`/`model`，`api_key` 用环境变量 `LLM_API_KEY` 提供。
