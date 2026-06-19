@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS posts (
     like_count     INTEGER,
     fav_count      INTEGER,
     view_count     INTEGER,
+    retweeted_post_id  BIGINT,   -- 被转发原帖 id，可自关联 posts.post_id
+    retweeted_user_id  BIGINT,   -- 被转发原帖作者 id
     crawled_at     TIMESTAMP,
     raw_json       VARCHAR
 );
@@ -47,6 +49,7 @@ _POST_COLUMNS = [
     "post_id", "user_id", "screen_name", "created_at", "created_at_ms",
     "title", "text", "description", "target", "url", "source", "is_column",
     "reply_count", "retweet_count", "like_count", "fav_count", "view_count",
+    "retweeted_post_id", "retweeted_user_id",
     "crawled_at", "raw_json",
 ]
 
@@ -75,12 +78,17 @@ class PostStore:
         self._con = duckdb.connect(db_path)
         self._con.execute(POSTS_SCHEMA)
         self._con.execute(USERS_SCHEMA)
+        # 兼容早期库：为缺失的新列做迁移
+        for col in ("retweeted_post_id", "retweeted_user_id"):
+            self._con.execute(f"ALTER TABLE posts ADD COLUMN IF NOT EXISTS {col} BIGINT")
 
     def _post_to_row(self, post, user_id=None, screen_name=None, crawled_at=None):
         user = post.get("user") or {}
         created_ms = post.get("created_at")
         target = post.get("target", "") or ""
         url = f"https://xueqiu.com{target}" if target.startswith("/") else target
+        rt = post.get("retweeted_status") or {}
+        rt_user = rt.get("user") or {}
         return [
             _to_int(post.get("id")),
             _to_int(post.get("user_id") or user.get("id") or user_id),
@@ -99,17 +107,37 @@ class PostStore:
             _to_int(post.get("like_count")),
             _to_int(post.get("fav_count")),
             _to_int(post.get("view_count")),
+            _to_int(rt.get("id")) if rt else None,
+            _to_int(rt.get("user_id") or rt_user.get("id")) if rt else None,
             crawled_at,
             json.dumps(post, ensure_ascii=False),
         ]
 
+    @staticmethod
+    def _expand_with_retweets(posts):
+        """展开帖子及其被转发的原帖（含多层嵌套），按 id 去重后返回列表"""
+        seen = {}
+
+        def visit(p):
+            if not isinstance(p, dict):
+                return
+            pid = p.get("id")
+            if pid is None or pid in seen:
+                return
+            seen[pid] = p
+            visit(p.get("retweeted_status"))
+
+        for p in posts:
+            visit(p)
+        return list(seen.values())
+
     def save_posts(self, posts, user_id=None, screen_name=None):
-        """批量写入帖子，已存在的 post_id 会被覆盖更新。返回写入条数"""
+        """批量写入帖子（含被转发原帖），已存在的 post_id 会被覆盖更新。返回写入条数"""
         crawled_at = datetime.now()
+        expanded = self._expand_with_retweets(posts)
         rows = [
             self._post_to_row(p, user_id, screen_name, crawled_at)
-            for p in posts
-            if p.get("id") is not None
+            for p in expanded
         ]
         if not rows:
             return 0
@@ -120,7 +148,9 @@ class PostStore:
             f"VALUES ({placeholders})"
         )
         self._con.executemany(sql, rows)
-        logger.info(f"已写入 DuckDB: {len(rows)} 条帖子 -> {self.db_path}")
+        extra = len(rows) - sum(1 for p in posts if isinstance(p, dict) and p.get("id") is not None)
+        suffix = f"（含 {extra} 条被转发原帖）" if extra > 0 else ""
+        logger.info(f"已写入 DuckDB: {len(rows)} 条帖子{suffix} -> {self.db_path}")
         return len(rows)
 
     def save_user(self, user_id, screen_name, followers_count=None, post_count=None):

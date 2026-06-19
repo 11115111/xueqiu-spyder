@@ -114,6 +114,22 @@ WHERE user_id = 9548638136 AND is_column
 ORDER BY created_at DESC;
 ```
 
+### 转发关联
+
+被转发的原帖会**作为独立行一并入库**，转发帖通过 `retweeted_post_id` / `retweeted_user_id`
+关联到原帖，可直接自关联 `posts` 表：
+
+```sql
+-- 转发帖 ↔ 被转发原帖
+SELECT p.screen_name AS 转发者, p.text AS 转发语,
+       o.screen_name AS 原作者, o.text AS 原帖内容
+FROM posts p
+JOIN posts o ON p.retweeted_post_id = o.post_id
+WHERE p.user_id = 9548638136;
+```
+
+> 早期已建的数据库会自动补上这两列（仅对之后新写入的帖子填充转发关联）。
+
 ## 示例
 
 ```bash
