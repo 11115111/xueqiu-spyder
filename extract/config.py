@@ -42,8 +42,11 @@ class LLMConfig:
         if path and os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
-            # 兼容两种写法：字段放在 llm: 下，或直接写在顶层
-            data = raw.get("llm", raw) if isinstance(raw, dict) else {}
+            # 兼容两种写法：字段放在 llm: 下、或直接写在顶层、甚至两者混用
+            if isinstance(raw, dict):
+                data = dict(raw)
+                if isinstance(raw.get("llm"), dict):
+                    data.update(raw["llm"])  # llm: 下的同名键优先
 
         def pick(key, env, cast, default):
             ev = _env(env)

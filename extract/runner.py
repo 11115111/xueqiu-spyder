@@ -44,7 +44,11 @@ def run(db_path, taxonomy_path=None, mode="todo", limit=None, llm=None, cfg=None
         if not posts:
             logger.info("没有待处理的帖子")
             return summary
-        logger.info(f"待处理 {len(posts)} 条，并发 {cfg.concurrency}，模型 {cfg.model}")
+        logger.info(
+            f"待处理 {len(posts)} 条，并发 {cfg.concurrency}，"
+            f"rpm {cfg.rpm if cfg.rpm else '不限'}，"
+            f"prompt_cache {cfg.prompt_cache}，模型 {cfg.model}"
+        )
 
         with ThreadPoolExecutor(max_workers=max(1, cfg.concurrency)) as ex:
             futures = {
