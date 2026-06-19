@@ -13,6 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import numpy as np
 import streamlit as st
 
 from viz import queries as q
@@ -50,8 +51,17 @@ def sidebar_filters(con):
     return f
 
 
+def _as_list(items):
+    """LIST 列经 .df() 可能是 numpy 数组或 NULL(pandas NA 标量)，统一成列表。"""
+    if isinstance(items, np.ndarray):
+        items = items.tolist()
+    elif not isinstance(items, (list, tuple)):
+        return []  # None / pd.NA / NaN 等非可迭代值
+    return [x for x in items if x]
+
+
 def _tags(label, items):
-    items = [x for x in (items or []) if x]
+    items = _as_list(items)
     if not items:
         return ""
     return f"{label}：" + " ".join(f"`{x}`" for x in items)
@@ -127,8 +137,8 @@ def main():
         render_card(r)
 
     csv = q.card_table(con, f)
-    csv["concepts"] = csv["concepts"].apply(lambda x: "、".join(x) if x is not None else "")
-    csv["targets"] = csv["targets"].apply(lambda x: "、".join(x) if x is not None else "")
+    csv["concepts"] = csv["concepts"].apply(lambda x: "、".join(_as_list(x)))
+    csv["targets"] = csv["targets"].apply(lambda x: "、".join(_as_list(x)))
     st.sidebar.download_button(
         "下载筛选结果 CSV",
         csv.to_csv(index=False).encode("utf-8-sig"),
