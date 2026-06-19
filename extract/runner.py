@@ -22,14 +22,16 @@ def _extract_one(post, llm, system_prompt, taxonomy):
     return cards, time.time() - t0
 
 
-def run(db_path, taxonomy_path=None, mode="todo", limit=None, llm=None, cfg=None):
+def run(db_path, taxonomy_path=None, mode="todo", limit=None, llm=None, cfg=None,
+        llm_config_path=None):
     """运行抽取管道。返回汇总 dict。
 
     mode: 'todo'(默认，未完成) | 'failed'(仅重试失败) | 'all'(全量重抽)
     limit: 小批校准用，只跑前 N 条
-    llm:   可注入自定义客户端（测试用）；默认按 env 构建
+    llm:   可注入自定义客户端（测试用）；默认按配置构建
+    cfg:   可直接注入 LLMConfig；默认从 llm.yaml + 环境变量加载
     """
-    cfg = cfg or LLMConfig.from_env()
+    cfg = cfg or LLMConfig.load(llm_config_path)
     taxonomy = Taxonomy.load(taxonomy_path)
     system_prompt = build_system_prompt(taxonomy)
     llm = llm or LLMClient(cfg)

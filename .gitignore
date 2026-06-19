@@ -2,6 +2,7 @@
 .cookies.json
 .env
 extract/.env
+extract/llm.yaml
 
 # Output reports
 output/

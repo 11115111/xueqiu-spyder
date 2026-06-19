@@ -156,14 +156,24 @@ WHERE p.user_id = 9548638136;
 
 ### 配置
 
-```bash
-export LLM_BASE_URL=https://your-provider/v1   # 兼容端点，需含 /v1
-export LLM_API_KEY=sk-xxxx
-export LLM_MODEL=your-model-name
-# 可选：LLM_TEMPERATURE(默认0) / LLM_CONCURRENCY(默认5) / LLM_MAX_RETRIES / LLM_TIMEOUT_S
+复制 `extract/llm.yaml.example` 为 `extract/llm.yaml` 并填写：
+
+```yaml
+llm:
+  base_url: https://your-provider/v1   # 兼容端点，需含 /v1
+  api_key: sk-xxxx
+  model: your-model-name
+  temperature: 0      # 可选，默认 0
+  concurrency: 5      # 可选，默认 5
+  max_retries: 3
+  timeout_s: 60
 ```
 
-参见 `extract/.env.example`。分类口径见 `extract/taxonomy.yaml`（概念枚举 + 口语线索 + few-shot）。
+`llm.yaml` 含密钥，已在 `.gitignore` 中排除。优先级 **环境变量 > llm.yaml > 默认值**——
+想让密钥不落盘，可只在文件里写 `base_url`/`model`，`api_key` 用环境变量 `LLM_API_KEY` 提供。
+也可用 `--llm-config 路径` 指定其它配置文件。
+
+分类口径见 `extract/taxonomy.yaml`（概念枚举 + 口语线索 + few-shot）。
 
 ### 运行
 

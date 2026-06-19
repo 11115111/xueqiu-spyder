@@ -9,6 +9,7 @@ import yaml
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_TAXONOMY = os.path.join(_HERE, "taxonomy.yaml")
+DEFAULT_LLM_CONFIG = os.path.join(_HERE, "llm.yaml")
 # 复用爬虫的默认 DuckDB 路径（与发帖数据同库并列）
 DEFAULT_DB = os.environ.get("XUEQIU_DB", "./xueqiu.duckdb")
 
@@ -29,7 +30,40 @@ class LLMConfig:
     timeout_s: int = 60
 
     @classmethod
+    def load(cls, path=None):
+        """从 YAML 配置文件读取 LLM 设置；同名环境变量优先级最高（便于把密钥放 env）。
+
+        优先级：环境变量 > 配置文件 > 默认值。
+        """
+        path = path or DEFAULT_LLM_CONFIG
+        data = {}
+        if path and os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                raw = yaml.safe_load(f) or {}
+            # 兼容两种写法：字段放在 llm: 下，或直接写在顶层
+            data = raw.get("llm", raw) if isinstance(raw, dict) else {}
+
+        def pick(key, env, cast, default):
+            ev = _env(env)
+            if ev is not None:
+                return cast(ev)
+            if key in data and data[key] not in (None, ""):
+                return cast(data[key])
+            return default
+
+        return cls(
+            base_url=(pick("base_url", "LLM_BASE_URL", str, "")).rstrip("/"),
+            api_key=pick("api_key", "LLM_API_KEY", str, ""),
+            model=pick("model", "LLM_MODEL", str, ""),
+            temperature=pick("temperature", "LLM_TEMPERATURE", float, 0.0),
+            concurrency=pick("concurrency", "LLM_CONCURRENCY", int, 5),
+            max_retries=pick("max_retries", "LLM_MAX_RETRIES", int, 3),
+            timeout_s=pick("timeout_s", "LLM_TIMEOUT_S", int, 60),
+        )
+
+    @classmethod
     def from_env(cls):
+        """仅从环境变量读取（向后兼容）。"""
         return cls(
             base_url=(_env("LLM_BASE_URL", "") or "").rstrip("/"),
             api_key=_env("LLM_API_KEY", ""),
@@ -44,9 +78,9 @@ class LLMConfig:
         missing = [k for k in ("base_url", "api_key", "model") if not getattr(self, k)]
         if missing:
             raise ValueError(
-                "缺少 LLM 配置环境变量: "
-                + ", ".join("LLM_" + m.upper() for m in missing)
-                + "。请设置 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL。"
+                "缺少 LLM 配置: " + ", ".join(missing)
+                + "。请在 extract/llm.yaml 中填写（参考 llm.yaml.example），"
+                "或用环境变量 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL 覆盖。"
             )
 
 

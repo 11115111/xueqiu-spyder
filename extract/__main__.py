@@ -8,7 +8,7 @@ import sys
 
 import duckdb
 
-from .config import DEFAULT_DB, DEFAULT_TAXONOMY
+from .config import DEFAULT_DB, DEFAULT_TAXONOMY, DEFAULT_LLM_CONFIG
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("extract")
@@ -21,6 +21,7 @@ def _cmd_run(args):
         taxonomy_path=args.taxonomy,
         mode=("failed" if args.only_failed else ("all" if args.reset else "todo")),
         limit=args.limit,
+        llm_config_path=args.llm_config,
     )
     print(
         "\n汇总: 总数 {total} | 成功 {done} | 失败 {failed} | "
@@ -67,6 +68,7 @@ def main(argv=None):
     sp_run = sub.add_parser("run", help="批量抽取")
     sp_run.add_argument("--db", default=DEFAULT_DB, help=f"DuckDB 路径（默认 {DEFAULT_DB}）")
     sp_run.add_argument("--taxonomy", default=DEFAULT_TAXONOMY, help="taxonomy.yaml 路径")
+    sp_run.add_argument("--llm-config", default=DEFAULT_LLM_CONFIG, help="LLM 配置文件路径（llm.yaml）")
     sp_run.add_argument("--limit", type=int, default=None, help="只跑前 N 条（小批校准）")
     sp_run.add_argument("--only-failed", action="store_true", help="只重试失败的帖")
     sp_run.add_argument("--reset", action="store_true", help="全量重抽（含已完成，重跑覆盖）")
