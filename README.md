@@ -50,12 +50,19 @@ python main.py stock <股票代码> [--min-reply 20] [--max-pages 20] [--output 
 ### 用户帖子爬取
 
 ```bash
-python main.py user <用户ID或用户名> [--max-pages 10] [--days 30] [--column] [--output ./output]
+python main.py user <用户ID或用户名> [--max-pages 10] [--all] [--days 30] [--column] [--output ./output]
 ```
 
+- `--all` 爬取该用户**全部**帖子，翻到没有更多为止（忽略 `--max-pages`，受 `config.MAX_USER_PAGES` 上限保护）
 - `--column` 仅抓取专栏文章
-- `--days N` 只保留最近 N 天的帖子
+- `--days N` 只保留最近 N 天的帖子；配合翻页时命中时间下限会自动提前停止，减少请求
 - 支持直接传用户名，会自动搜索解析为数字ID
+
+> **反封禁说明**：爬取用户全部帖子时内置了节流策略——每次请求带随机抖动间隔、
+> 每翻若干页做一次较长休息、检测到限流/风控（HTTP 429/403 或非 JSON 响应）时自动指数退避重试。
+> 相关参数可在 `config.py` 中调整：`REQUEST_DELAY`、`REQUEST_DELAY_JITTER`、
+> `LONG_REST_EVERY`、`LONG_REST_SECONDS`、`RATE_LIMIT_BACKOFF` 等。
+> 如需更稳妥（爬取量大、账号重要），建议调大 `REQUEST_DELAY` 与 `LONG_REST_SECONDS`。
 
 ### 搜索用户
 

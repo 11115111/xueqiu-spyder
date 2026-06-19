@@ -1,5 +1,6 @@
 import time
 import re
+import random
 import logging
 import subprocess
 import os
@@ -413,8 +414,75 @@ class XueqiuCrawler:
                 return uid, target["name"]
         raise CrawlerError(f"无法解析用户ID: {target}")
 
-    def get_user_all_posts_with_info(self, user_id, max_pages=10):
-        """在同一个页面中获取用户信息和所有帖子，避免重复导航"""
+    def _throttle(self, page_num):
+        """请求间隔节流：基础间隔 + 随机抖动，并每隔若干页做一次长休息，模拟真人节奏"""
+        delay = config.REQUEST_DELAY + random.uniform(0, config.REQUEST_DELAY_JITTER)
+        time.sleep(delay)
+        every = getattr(config, "LONG_REST_EVERY", 0)
+        if every and page_num > 0 and page_num % every == 0:
+            rest = config.LONG_REST_SECONDS + random.uniform(0, config.REQUEST_DELAY_JITTER)
+            logger.info(f"  已爬取 {page_num} 页，休息 {rest:.0f}s 以规避风控...")
+            time.sleep(rest)
+
+    def _fetch_timeline_page(self, user_page, user_id, page_num, count=20):
+        """获取用户 timeline 的某一页，带限流检测与指数退避重试。
+
+        返回 (statuses, status_flag)：
+          status_flag 为 'ok' | 'empty' | 'failed'
+        """
+        for attempt in range(config.RATE_LIMIT_MAX_RETRIES):
+            result = user_page.evaluate(
+                """async (args) => {
+                    try {
+                        const resp = await fetch(
+                            `/v4/statuses/user_timeline.json?user_id=${args.uid}&page=${args.page}&count=${args.count}`
+                        );
+                        const status = resp.status;
+                        const ct = resp.headers.get('content-type') || '';
+                        if (status === 429 || status === 403) return {ok: false, rateLimited: true, status, error: 'rate_limited'};
+                        if (!ct.includes('json')) return {ok: false, rateLimited: true, status, error: 'not_json(可能被风控拦截)'};
+                        const data = await resp.json();
+                        if (data.error_code) return {ok: false, status, error_code: data.error_code, error: data.error_description};
+                        return {ok: true, status, statuses: data.statuses || []};
+                    } catch(e) { return {ok: false, error: e.message}; }
+                }""",
+                {"uid": user_id, "page": page_num, "count": count},
+            )
+
+            if result.get("ok"):
+                statuses = result.get("statuses", [])
+                return statuses, ("ok" if statuses else "empty")
+
+            # 限流/被风控：指数退避后重试同一页
+            if result.get("rateLimited"):
+                backoff = config.RATE_LIMIT_BACKOFF * (2 ** attempt) + random.uniform(0, 5)
+                logger.warning(
+                    f"  第 {page_num} 页疑似被限流 (status={result.get('status')}, "
+                    f"{result.get('error')})，{backoff:.0f}s 后重试 "
+                    f"({attempt + 1}/{config.RATE_LIMIT_MAX_RETRIES})"
+                )
+                time.sleep(backoff)
+                continue
+
+            # 其它错误（如用户隐私设置）不重试
+            logger.warning(f"  第 {page_num} 页失败: {result.get('error')}")
+            return [], "failed"
+
+        logger.error(f"  第 {page_num} 页超过最大重试次数，疑似被持续限流")
+        return [], "failed"
+
+    def crawl_user_all_posts(self, user_id, max_pages=None, stop_before_ms=None):
+        """爬取指定用户的全部发帖，内置反封禁节流策略。
+
+        参数:
+            user_id:        用户数字 ID
+            max_pages:      最大翻页数，None 表示一直翻到没有更多（受 config.MAX_USER_PAGES 上限保护）
+            stop_before_ms: 若提供（毫秒时间戳），当某页最旧帖子早于该时间时提前停止，
+                            避免为了少量旧帖继续翻页而增加被封风险
+
+        返回: (screen_name, all_statuses)
+        """
+        page_cap = max_pages or getattr(config, "MAX_USER_PAGES", 500)
         user_page = self._browser.contexts[0].new_page()
         all_statuses = []
         screen_name = str(user_id)
@@ -429,7 +497,7 @@ class XueqiuCrawler:
             except Exception:
                 pass
 
-            # 在同一页面获取用户名
+            # 在同一页面获取用户名（复用页面减少导航 = 减少被风控的请求次数）
             screen_name = user_page.evaluate("""() => {
                 let name = document.querySelector('.user-name')?.textContent?.trim() || '';
                 if (!name) {
@@ -439,35 +507,32 @@ class XueqiuCrawler:
                 return name;
             }""") or str(user_id)
 
-            # 在同一页面分页获取帖子
-            for page_num in range(1, max_pages + 1):
-                time.sleep(config.REQUEST_DELAY)
-                result = user_page.evaluate(
-                    """async (args) => {
-                        try {
-                            const resp = await fetch(
-                                `/v4/statuses/user_timeline.json?user_id=${args.uid}&page=${args.page}&count=20`
-                            );
-                            const ct = resp.headers.get('content-type') || '';
-                            if (!ct.includes('json')) return {ok: false, error: 'not json'};
-                            const data = await resp.json();
-                            if (data.error_code) return {ok: false, error: data.error_description};
-                            return {ok: true, statuses: data.statuses || [], count: data.count};
-                        } catch(e) { return {ok: false, error: e.message}; }
-                    }""",
-                    {"uid": user_id, "page": page_num},
-                )
-                if not result.get("ok"):
-                    logger.warning(f"用户 {user_id} 第 {page_num} 页失败: {result.get('error')}")
+            for page_num in range(1, page_cap + 1):
+                self._throttle(page_num - 1)
+                statuses, flag = self._fetch_timeline_page(user_page, user_id, page_num)
+
+                if flag == "failed":
                     break
-                statuses = result.get("statuses", [])
-                if not statuses:
+                if flag == "empty":
+                    logger.info(f"  第 {page_num} 页无更多帖子，爬取结束")
                     break
+
                 all_statuses.extend(statuses)
-                logger.info(f"  第 {page_num} 页获取 {len(statuses)} 条 (共 {len(all_statuses)})")
+                logger.info(f"  第 {page_num}/{page_cap} 页获取 {len(statuses)} 条 (共 {len(all_statuses)})")
+
+                # 按时间提前停止：timeline 为倒序，本页最旧帖早于 cutoff 则后续都更旧
+                if stop_before_ms is not None:
+                    oldest = min((s.get("created_at") or 0) for s in statuses)
+                    if oldest < stop_before_ms:
+                        logger.info(f"  已到达时间下限，提前停止翻页")
+                        break
         finally:
             user_page.close()
         return screen_name, all_statuses
+
+    def get_user_all_posts_with_info(self, user_id, max_pages=10):
+        """在同一个页面中获取用户信息和所有帖子（兼容旧接口，内部复用反封禁爬取逻辑）"""
+        return self.crawl_user_all_posts(user_id, max_pages=max_pages)
 
     def close(self):
         """断开浏览器连接"""

@@ -75,7 +75,7 @@ def run(symbol, min_reply_count=None, max_pages=None, output_dir=None):
         crawler.close()
 
 
-def run_user(user_id, max_pages=10, output_dir=None, days=None, column_only=False):
+def run_user(user_id, max_pages=10, output_dir=None, days=None, column_only=False, crawl_all=False):
     """爬取指定用户的帖子并生成报告。user_id 可以是数字ID或用户名。"""
     if output_dir is None:
         output_dir = config.DEFAULT_OUTPUT_DIR
@@ -91,9 +91,14 @@ def run_user(user_id, max_pages=10, output_dir=None, days=None, column_only=Fals
 
         logger.info(f"开始爬取用户 {user_id} 的帖子...")
 
-        # 一次导航同时获取用户名和帖子
-        screen_name, all_posts = crawler.get_user_all_posts_with_info(
-            user_id, max_pages=max_pages
+        # --all 表示翻到底（None 交给爬虫按 config.MAX_USER_PAGES 兜底）
+        page_limit = None if crawl_all else max_pages
+        # 有时间过滤时传入下限，命中即提前停止翻页，减少不必要的请求
+        stop_before_ms = (time.time() - days * 86400) * 1000 if days else None
+
+        # 一次导航同时获取用户名和帖子，内置反封禁节流
+        screen_name, all_posts = crawler.crawl_user_all_posts(
+            user_id, max_pages=page_limit, stop_before_ms=stop_before_ms
         )
         logger.info(f"用户: {screen_name}，共获取 {len(all_posts)} 条帖子")
 
@@ -174,6 +179,7 @@ def main():
     sp_user = subparsers.add_parser("user", help="爬取指定用户帖子")
     sp_user.add_argument("user_id", help="用户ID或用户名（用户名会自动搜索解析）")
     sp_user.add_argument("--max-pages", type=int, default=10)
+    sp_user.add_argument("--all", action="store_true", help="爬取该用户全部帖子（忽略 --max-pages，翻到没有更多为止）")
     sp_user.add_argument("--days", type=int, default=None, help="只保留最近N天的帖子")
     sp_user.add_argument("--column", action="store_true", help="仅抓取专栏文章")
     sp_user.add_argument("--output", default=config.DEFAULT_OUTPUT_DIR)
@@ -192,7 +198,7 @@ def main():
         if args.command == "stock":
             result = run(args.symbol, args.min_reply, args.max_pages, args.output)
         elif args.command == "user":
-            result = run_user(args.user_id, args.max_pages, args.output, getattr(args, 'days', None), getattr(args, 'column', False))
+            result = run_user(args.user_id, args.max_pages, args.output, getattr(args, 'days', None), getattr(args, 'column', False), getattr(args, 'all', False))
         elif args.command == "search":
             run_search(args.keyword)
             return
