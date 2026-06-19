@@ -101,4 +101,11 @@ def run(db_path, taxonomy_path=None, mode="todo", limit=None, llm=None, cfg=None
             f"Token: prompt {pt} | 缓存命中 {ct}（{rate:.0f}%）| "
             f"completion {stats['completion_tokens']}"
         )
+        if ct == 0 and stats.get("calls", 0) >= 2:
+            logger.warning(
+                "缓存命中为 0。排查方向："
+                "①看上方 LLM usage 日志里是否存在缓存字段（无 → 该端点未透出/未启用缓存，"
+                "常见于聚合代理）；②Gemini 隐式缓存仅 2.5+ 且需公共前缀超阈值（Flash-Lite≈2048 token，"
+                "本管道 system≈2.4k+ 通常达标）；③首条必为 miss，需连续多条才回填命中。"
+            )
     return summary

@@ -111,9 +111,11 @@ class LLMClient:
             self.stats["prompt_tokens"] += usage.get("prompt_tokens") or 0
             self.stats["completion_tokens"] += usage.get("completion_tokens") or 0
             self.stats["cached_tokens"] += cached or 0
-            # 首次成功调用打印原始 usage 字段，便于排查某厂商缓存统计口径
-            if self.stats["calls"] == 1 and usage:
-                logger.info(f"LLM usage 字段示例（用于核对缓存统计口径）: {usage}")
+            # 打印前几次调用的原始 usage（首次必为缓存 miss，故多打几条便于观察是否回填命中）
+            if self.stats["calls"] <= 3 and usage:
+                logger.info(
+                    f"LLM usage[{self.stats['calls']}]（核对缓存统计口径）: {usage}"
+                )
 
     def chat(self, system, user):
         """调用 chat completions，返回 assistant 文本内容。失败按配置重试。"""
