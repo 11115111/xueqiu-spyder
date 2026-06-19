@@ -239,6 +239,20 @@ SELECT * FROM cards WHERE list_contains(targets, '合富');
 
 > 抽取的判断是对原帖观点的结构化，不构成投资建议；低置信度项（`needs_review`）须人工复核。
 
+## 可视化仪表盘（Streamlit）
+
+把 `cards` 表（情绪周期结构化卡片）做成交互式仪表盘，支持按概念/正反例/周期/标的/置信度/日期多维筛选。
+
+```bash
+pip install -r requirements.txt   # 需 streamlit / plotly / pandas
+streamlit run dashboard.py -- --db ./xueqiu.duckdb
+```
+
+打开浏览器即可看到：KPI（卡片/帖子/正反例/待复核数）、概念频次、正反例×概念、周期分布、标的 Top、
+置信度分布、事件时间线，以及可筛选的卡片明细（含 `key_quote`/`judgment` 与雪球链接，可导出 CSV）。
+
+> 只读打开数据库，不影响爬虫/抽取。需先 `python -m extract run` 生成 `cards` 表。
+
 ## 示例
 
 ```bash
