@@ -14,3 +14,7 @@ llm:
   rpm: 0                               # 每分钟请求数上限（客户端限流），0=不限；按厂商配额设
   max_retries: 3
   timeout_s: 60
+  # prompt 缓存：长且稳定的 system prompt 作为可缓存前缀，降本提速。
+  #   off       —— OpenAI/DeepSeek 等会按相同前缀「自动」缓存，无需设置
+  #   anthropic —— 给 system 注入 cache_control（Anthropic 风格端点需要）
+  prompt_cache: off

@@ -29,6 +29,7 @@ class LLMConfig:
     max_retries: int = 3
     timeout_s: int = 60
     rpm: int = 0   # 每分钟请求数上限（客户端限流），0 表示不限
+    prompt_cache: str = "off"   # off | anthropic（给 system 注入 cache_control）
 
     @classmethod
     def load(cls, path=None):
@@ -61,6 +62,7 @@ class LLMConfig:
             max_retries=pick("max_retries", "LLM_MAX_RETRIES", int, 3),
             timeout_s=pick("timeout_s", "LLM_TIMEOUT_S", int, 60),
             rpm=pick("rpm", "LLM_RPM", int, 0),
+            prompt_cache=pick("prompt_cache", "LLM_PROMPT_CACHE", str, "off"),
         )
 
     @classmethod
@@ -75,6 +77,7 @@ class LLMConfig:
             max_retries=int(_env("LLM_MAX_RETRIES", "3") or 3),
             timeout_s=int(_env("LLM_TIMEOUT_S", "60") or 60),
             rpm=int(_env("LLM_RPM", "0") or 0),
+            prompt_cache=_env("LLM_PROMPT_CACHE", "off"),
         )
 
     def validate(self):

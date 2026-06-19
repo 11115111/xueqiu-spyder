@@ -87,4 +87,14 @@ def run(db_path, taxonomy_path=None, mode="todo", limit=None, llm=None, cfg=None
         "汇总: 总数 %(total)d | 成功 %(done)d | 失败 %(failed)d | "
         "产卡 %(cards)d | 待复核 %(review)d | 空数组 %(empty)d" % summary
     )
+    stats = getattr(llm, "stats", None)
+    if stats and stats.get("prompt_tokens"):
+        pt, ct = stats["prompt_tokens"], stats["cached_tokens"]
+        rate = (ct / pt * 100) if pt else 0
+        summary["prompt_tokens"] = pt
+        summary["cached_tokens"] = ct
+        logger.info(
+            f"Token: prompt {pt} | 缓存命中 {ct}（{rate:.0f}%）| "
+            f"completion {stats['completion_tokens']}"
+        )
     return summary

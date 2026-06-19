@@ -69,6 +69,38 @@ class LLMClient:
         cfg.validate()
         self._url = f"{cfg.base_url}/chat/completions"
         self._limiter = limiter or RateLimiter(getattr(cfg, "rpm", 0))
+        self._stats_lock = threading.Lock()
+        # 累计 token 用量，便于观察 prompt 缓存命中效果
+        self.stats = {"calls": 0, "prompt_tokens": 0, "cached_tokens": 0,
+                      "completion_tokens": 0}
+
+    def _system_message(self, system):
+        """构造 system 消息；prompt_cache=anthropic 时注入 cache_control。
+
+        长且稳定的 system prompt 作为可缓存前缀：OpenAI/DeepSeek 等会自动按前缀缓存；
+        Anthropic 风格端点需显式 cache_control，故按需注入。
+        """
+        if str(getattr(self.cfg, "prompt_cache", "off")).lower() == "anthropic":
+            return {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": system,
+                     "cache_control": {"type": "ephemeral"}}
+                ],
+            }
+        return {"role": "system", "content": system}
+
+    def _record_usage(self, data):
+        usage = data.get("usage") or {}
+        det = usage.get("prompt_tokens_details") or {}
+        cached = (det.get("cached_tokens")
+                  or usage.get("prompt_cache_hit_tokens")
+                  or usage.get("cache_read_input_tokens") or 0)
+        with self._stats_lock:
+            self.stats["calls"] += 1
+            self.stats["prompt_tokens"] += usage.get("prompt_tokens") or 0
+            self.stats["completion_tokens"] += usage.get("completion_tokens") or 0
+            self.stats["cached_tokens"] += cached or 0
 
     def chat(self, system, user):
         """调用 chat completions，返回 assistant 文本内容。失败按配置重试。"""
@@ -76,7 +108,7 @@ class LLMClient:
             "model": self.cfg.model,
             "temperature": self.cfg.temperature,
             "messages": [
-                {"role": "system", "content": system},
+                self._system_message(system),
                 {"role": "user", "content": user},
             ],
         }
@@ -99,7 +131,9 @@ class LLMClient:
                     raise LLMError(f"HTTP {resp.status_code}: {resp.text[:200]}")
                 resp.raise_for_status()
                 data = resp.json()
-                return data["choices"][0]["message"]["content"]
+                content = data["choices"][0]["message"]["content"]
+                self._record_usage(data)
+                return content
             except (requests.RequestException, LLMError, KeyError, ValueError) as e:
                 last_err = e
                 if attempt >= self.cfg.max_retries:
