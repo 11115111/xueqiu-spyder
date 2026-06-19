@@ -31,13 +31,16 @@ pip install -r requirements.txt
 
 ## Cookie 设置
 
-爬虫需要雪球登录态 Cookie。首次使用前运行：
+雪球**未登录时只能获取首页/第一页公开数据**，翻页或查看更多会提示「请登录雪球查看更多内容」。
+因此爬取用户全部帖子前需配置登录态 Cookie：
 
 ```bash
 python setup_cookie.py
 ```
 
-这会打开 Chrome 让你登录雪球，登录后自动保存 Cookie 到 `.cookies.json`（已在 .gitignore 中排除，不会被提交）。
+在 Chrome 中打开 https://xueqiu.com 并登录，按 `F12 -> Application -> Cookies -> https://xueqiu.com`，
+按提示粘贴 `xq_a_token` 等 Cookie 值，脚本会保存到 `.cookies.json`（已在 .gitignore 中排除，不会被提交）。
+爬虫启动时会自动把这些 Cookie 注入浏览器。若 token 过期再次出现登录提示，重新运行本脚本更新即可。
 
 ## 使用
 

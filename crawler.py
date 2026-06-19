@@ -1,5 +1,6 @@
 import time
 import re
+import json
 import random
 import logging
 import subprocess
@@ -12,6 +13,8 @@ from playwright.sync_api import sync_playwright
 import config
 
 logger = logging.getLogger(__name__)
+
+COOKIE_FILE = os.path.join(os.path.dirname(__file__), ".cookies.json")
 
 USER_DATA_DIR = os.path.join(os.path.dirname(__file__), ".chrome-debug-profile")
 DEBUG_PORT = 9222
@@ -101,6 +104,9 @@ class XueqiuCrawler:
             )
             logger.info("Chrome 启动并连接成功")
 
+        # 注入登录 Cookie（在导航前注入，使后续请求带上登录态）
+        self._load_cookies()
+
         # 获取或创建页面
         contexts = self._browser.contexts
         if contexts and contexts[0].pages:
@@ -111,6 +117,36 @@ class XueqiuCrawler:
         # 确保在雪球域名下
         if "xueqiu.com" not in self._page.url:
             self._page.goto(config.XUEQIU_HOME, wait_until="domcontentloaded", timeout=15000)
+
+    def _load_cookies(self):
+        """从 .cookies.json 注入雪球登录 Cookie。未配置时返回 False。"""
+        if not os.path.exists(COOKIE_FILE):
+            logger.warning(
+                "未找到登录 Cookie（.cookies.json）。只能获取公开的首页数据，"
+                "翻页/查看更多会被要求登录。请先运行: python setup_cookie.py"
+            )
+            return False
+        try:
+            with open(COOKIE_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning(f"读取 Cookie 文件失败: {e}")
+            return False
+
+        cookies = [
+            {"name": k, "value": str(v), "domain": ".xueqiu.com", "path": "/"}
+            for k, v in (data or {}).items() if v
+        ]
+        if not cookies:
+            logger.warning(".cookies.json 为空，未注入任何 Cookie")
+            return False
+        try:
+            self._browser.contexts[0].add_cookies(cookies)
+            logger.info(f"已注入 {len(cookies)} 个雪球登录 Cookie")
+            return True
+        except Exception as e:
+            logger.warning(f"注入 Cookie 失败: {e}")
+            return False
 
     def _launch_chrome(self):
         """以调试模式启动 Chrome"""
@@ -464,8 +500,14 @@ class XueqiuCrawler:
                 time.sleep(backoff)
                 continue
 
+            # 需要登录：Cookie 缺失或失效，不重试
+            err = result.get("error") or ""
+            if "登录" in err or result.get("error_code") in (400016,):
+                logger.warning(f"  第 {page_num} 页失败: {err}")
+                return [], "auth"
+
             # 其它错误（如用户隐私设置）不重试
-            logger.warning(f"  第 {page_num} 页失败: {result.get('error')}")
+            logger.warning(f"  第 {page_num} 页失败: {err}")
             return [], "failed"
 
         logger.error(f"  第 {page_num} 页超过最大重试次数，疑似被持续限流")
@@ -511,6 +553,13 @@ class XueqiuCrawler:
                 self._throttle(page_num - 1)
                 statuses, flag = self._fetch_timeline_page(user_page, user_id, page_num)
 
+                if flag == "auth":
+                    logger.error(
+                        "雪球要求登录后才能查看更多内容。请先运行 `python setup_cookie.py` "
+                        "配置登录 Cookie（或确认 .cookies.json 中的 token 未过期）后重试。"
+                        f"（本次已获取 {len(all_statuses)} 条）"
+                    )
+                    break
                 if flag == "failed":
                     break
                 if flag == "empty":
