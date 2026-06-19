@@ -41,7 +41,9 @@ CREATE TABLE IF NOT EXISTS users (
     screen_name      VARCHAR,
     followers_count  INTEGER,
     post_count       INTEGER,
-    last_crawled_at  TIMESTAMP
+    last_crawled_at  TIMESTAMP,
+    resume_page      INTEGER,    -- 断点续爬：下次应从第几页继续
+    last_status      VARCHAR     -- 'completed'（已抓完）| 'blocked'（中途被拦截）
 );
 """
 
@@ -81,6 +83,8 @@ class PostStore:
         # 兼容早期库：为缺失的新列做迁移
         for col in ("retweeted_post_id", "retweeted_user_id"):
             self._con.execute(f"ALTER TABLE posts ADD COLUMN IF NOT EXISTS {col} BIGINT")
+        self._con.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS resume_page INTEGER")
+        self._con.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_status VARCHAR")
 
     def _post_to_row(self, post, user_id=None, screen_name=None, crawled_at=None):
         user = post.get("user") or {}
@@ -154,14 +158,43 @@ class PostStore:
         return len(rows)
 
     def save_user(self, user_id, screen_name, followers_count=None, post_count=None):
-        """记录/更新用户信息"""
+        """记录/更新用户信息（不影响断点续爬状态字段）"""
         self._con.execute(
-            """INSERT OR REPLACE INTO users
-               (user_id, screen_name, followers_count, post_count, last_crawled_at)
-               VALUES (?, ?, ?, ?, ?)""",
+            """INSERT INTO users
+                   (user_id, screen_name, followers_count, post_count, last_crawled_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT (user_id) DO UPDATE SET
+                   screen_name = excluded.screen_name,
+                   followers_count = coalesce(excluded.followers_count, users.followers_count),
+                   post_count = excluded.post_count,
+                   last_crawled_at = excluded.last_crawled_at""",
             [_to_int(user_id), screen_name, _to_int(followers_count),
              _to_int(post_count), datetime.now()],
         )
+
+    def set_crawl_state(self, user_id, resume_page, completed):
+        """记录断点续爬状态：completed 时清空续爬页，否则保存中断页"""
+        status = "completed" if completed else "blocked"
+        page = None if completed else _to_int(resume_page)
+        self._con.execute(
+            """INSERT INTO users (user_id, resume_page, last_status, last_crawled_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT (user_id) DO UPDATE SET
+                   resume_page = excluded.resume_page,
+                   last_status = excluded.last_status,
+                   last_crawled_at = excluded.last_crawled_at""",
+            [_to_int(user_id), page, status, datetime.now()],
+        )
+
+    def get_resume_page(self, user_id):
+        """返回断点续爬的起始页：上次被拦截则从中断页继续，否则从第 1 页"""
+        row = self._con.execute(
+            "SELECT resume_page, last_status FROM users WHERE user_id = ?",
+            [_to_int(user_id)],
+        ).fetchone()
+        if row and row[1] == "blocked" and row[0] and row[0] > 1:
+            return int(row[0])
+        return 1
 
     def dedup(self):
         """按 post_id 去重，保留最近抓取的一条，返回删除条数。

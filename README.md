@@ -53,7 +53,7 @@ python main.py stock <股票代码> [--min-reply 20] [--max-pages 20] [--output 
 ### 用户帖子爬取
 
 ```bash
-python main.py user <用户ID或用户名> [--max-pages 10] [--all] [--days 30] [--full-text] [--db ./xueqiu.duckdb] [--no-db]
+python main.py user <用户ID或用户名> [--max-pages 10] [--all] [--days 30] [--full-text] [--resume] [--db ./xueqiu.duckdb] [--no-db]
 ```
 
 > 用户帖子**直接写入 DuckDB，不再生成 Markdown 文件**。需要任何视图/过滤都用 SQL 查询数据库即可。
@@ -61,9 +61,27 @@ python main.py user <用户ID或用户名> [--max-pages 10] [--all] [--days 30] 
 - `--all` 爬取该用户**全部**帖子，翻到没有更多为止（忽略 `--max-pages`，受 `config.MAX_USER_PAGES` 上限保护）
 - `--days N` 只爬最近 N 天，命中时间下限即提前停止翻页，减少请求
 - `--full-text` 补全被截断的长文全文（会额外访问详情页，请求量更大）
+- `--resume` 断点续爬：从上次被拦截的页码继续（见下）
 - `--db PATH` 指定 DuckDB 数据库文件路径（默认 `./xueqiu.duckdb`）
 - `--no-db` 本次不写入数据库（仅爬取，不落库）
 - 支持直接传用户名，会自动搜索解析为数字ID
+
+#### 断点续爬
+
+每次爬取结束都会把进度记到 DuckDB 的 `users` 表（`resume_page` / `last_status`）：
+
+- 若中途被风控/要求登录而中断，会记录**中断的页码**并提示
+- 下次带 `--resume` 即从那一页继续，不必从头重爬：
+
+```bash
+python main.py user 治雨 --all            # 假设在第 8 页被拦截中断
+python main.py user 治雨 --all --resume    # 从第 8 页继续
+```
+
+> 说明：续爬按**页码**定位。若两次运行之间该用户又发了新帖，页码会顺移，
+> `--resume` 可能略过最顶部的新帖（已抓的旧帖因主键去重不会重复）。
+> 因此 `--resume` 适合「尽快接着把历史抓完」；想顺带补最新内容时，不加 `--resume` 从头跑一遍即可（去重保证不会重复）。
+> 已正常抓完后，续爬记录会清空，再次运行将从第 1 页开始。
 
 > **反封禁说明**：爬取用户全部帖子时内置了节流策略——每次请求带随机抖动间隔、
 > 每翻若干页做一次较长休息、检测到限流/风控（HTTP 429/403 或非 JSON 响应）时自动指数退避重试。

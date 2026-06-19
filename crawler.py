@@ -513,21 +513,27 @@ class XueqiuCrawler:
         logger.error(f"  第 {page_num} 页超过最大重试次数，疑似被持续限流")
         return [], "failed"
 
-    def crawl_user_all_posts(self, user_id, max_pages=None, stop_before_ms=None):
-        """爬取指定用户的全部发帖，内置反封禁节流策略。
+    def crawl_user_all_posts(self, user_id, max_pages=None, stop_before_ms=None, start_page=1):
+        """爬取指定用户的全部发帖，内置反封禁节流策略，支持断点续爬。
 
         参数:
             user_id:        用户数字 ID
             max_pages:      最大翻页数，None 表示一直翻到没有更多（受 config.MAX_USER_PAGES 上限保护）
             stop_before_ms: 若提供（毫秒时间戳），当某页最旧帖子早于该时间时提前停止，
                             避免为了少量旧帖继续翻页而增加被封风险
+            start_page:     从第几页开始（断点续爬时传入上次中断的页码）
 
-        返回: (screen_name, all_statuses)
+        返回: (screen_name, all_statuses, next_page, completed)
+            next_page:  下次应从哪一页继续（被拦截时即中断的那一页）；completed 为 True 时无意义
+            completed:  是否已抓完（翻到无更多 / 到达时间下限）
         """
         page_cap = max_pages or getattr(config, "MAX_USER_PAGES", 500)
+        start_page = max(1, int(start_page or 1))
         user_page = self._browser.contexts[0].new_page()
         all_statuses = []
         screen_name = str(user_id)
+        completed = False
+        next_page = start_page
         try:
             user_page.goto(
                 f"https://xueqiu.com/u/{user_id}",
@@ -549,7 +555,11 @@ class XueqiuCrawler:
                 return name;
             }""") or str(user_id)
 
-            for page_num in range(1, page_cap + 1):
+            if start_page > 1:
+                logger.info(f"  从第 {start_page} 页继续爬取")
+
+            for page_num in range(start_page, page_cap + 1):
+                next_page = page_num  # 记录当前所在页；中断时即为下次续爬起点
                 self._throttle(page_num - 1)
                 statuses, flag = self._fetch_timeline_page(user_page, user_id, page_num)
 
@@ -557,13 +567,15 @@ class XueqiuCrawler:
                     logger.error(
                         "雪球要求登录后才能查看更多内容。请先运行 `python setup_cookie.py` "
                         "配置登录 Cookie（或确认 .cookies.json 中的 token 未过期）后重试。"
-                        f"（本次已获取 {len(all_statuses)} 条）"
+                        f"（本次已获取 {len(all_statuses)} 条，下次将从第 {page_num} 页续爬）"
                     )
                     break
                 if flag == "failed":
+                    logger.warning(f"  第 {page_num} 页中断，下次将从该页续爬")
                     break
                 if flag == "empty":
                     logger.info(f"  第 {page_num} 页无更多帖子，爬取结束")
+                    completed = True
                     break
 
                 all_statuses.extend(statuses)
@@ -574,14 +586,21 @@ class XueqiuCrawler:
                     oldest = min((s.get("created_at") or 0) for s in statuses)
                     if oldest < stop_before_ms:
                         logger.info(f"  已到达时间下限，提前停止翻页")
+                        completed = True
                         break
+            else:
+                # 循环正常结束 = 抵达 page_cap 上限，可能还有更多
+                next_page = page_cap + 1
         finally:
             user_page.close()
-        return screen_name, all_statuses
+        return screen_name, all_statuses, next_page, completed
 
     def get_user_all_posts_with_info(self, user_id, max_pages=10):
         """在同一个页面中获取用户信息和所有帖子（兼容旧接口，内部复用反封禁爬取逻辑）"""
-        return self.crawl_user_all_posts(user_id, max_pages=max_pages)
+        screen_name, all_statuses, _next, _done = self.crawl_user_all_posts(
+            user_id, max_pages=max_pages
+        )
+        return screen_name, all_statuses
 
     def close(self):
         """断开浏览器连接"""

@@ -75,7 +75,8 @@ def run(symbol, min_reply_count=None, max_pages=None, output_dir=None):
         crawler.close()
 
 
-def run_user(user_id, max_pages=10, days=None, crawl_all=False, db_path=None, full_text=False):
+def run_user(user_id, max_pages=10, days=None, crawl_all=False, db_path=None,
+             full_text=False, resume=False):
     """爬取指定用户的全部帖子并存入 DuckDB。user_id 可以是数字ID或用户名。"""
     crawler = XueqiuCrawler()
 
@@ -86,6 +87,20 @@ def run_user(user_id, max_pages=10, days=None, crawl_all=False, db_path=None, fu
             user_id, resolved_name = crawler.find_user_id(user_id)
             logger.info(f"已解析: {resolved_name} -> {user_id}")
 
+        # 断点续爬：从上次被拦截的页码继续（需 DuckDB 记录）
+        start_page = 1
+        if resume:
+            if not db_path:
+                logger.warning("--resume 需要 DuckDB 记录续爬状态，已忽略")
+            else:
+                from storage import PostStore
+                with PostStore(db_path) as store:
+                    start_page = store.get_resume_page(user_id)
+                if start_page > 1:
+                    logger.info(f"断点续爬：从第 {start_page} 页继续")
+                else:
+                    logger.info("无可续爬的中断记录，从第 1 页开始")
+
         logger.info(f"开始爬取用户 {user_id} 的帖子...")
 
         # --all 表示翻到底（None 交给爬虫按 config.MAX_USER_PAGES 兜底）
@@ -94,17 +109,13 @@ def run_user(user_id, max_pages=10, days=None, crawl_all=False, db_path=None, fu
         stop_before_ms = (time.time() - days * 86400) * 1000 if days else None
 
         # 一次导航同时获取用户名和帖子，内置反封禁节流
-        screen_name, all_posts = crawler.crawl_user_all_posts(
-            user_id, max_pages=page_limit, stop_before_ms=stop_before_ms
+        screen_name, all_posts, next_page, completed = crawler.crawl_user_all_posts(
+            user_id, max_pages=page_limit, stop_before_ms=stop_before_ms, start_page=start_page
         )
-        logger.info(f"用户: {screen_name}，共获取 {len(all_posts)} 条帖子")
-
-        if not all_posts:
-            logger.warning("未获取到任何帖子")
-            return None
+        logger.info(f"用户: {screen_name}，本次获取 {len(all_posts)} 条帖子")
 
         # 可选：补全被截断的长文全文（会额外访问详情页，请求量更大）
-        if full_text:
+        if all_posts and full_text:
             logger.info("正在补全帖子全文...")
             crawler.enrich_posts_full_text(all_posts)
 
@@ -112,13 +123,22 @@ def run_user(user_id, max_pages=10, days=None, crawl_all=False, db_path=None, fu
             logger.warning("已禁用 DuckDB 写入（--no-db），本次不落库")
             return None
 
-        # 持久化到 DuckDB（按 post_id 幂等去重）
+        # 持久化到 DuckDB（按 post_id 幂等去重），并记录续爬状态
         from storage import PostStore
         with PostStore(db_path) as store:
-            store.save_posts(all_posts, user_id=user_id, screen_name=screen_name)
-            store.save_user(user_id, screen_name, post_count=len(all_posts))
+            if all_posts:
+                store.save_posts(all_posts, user_id=user_id, screen_name=screen_name)
+                store.save_user(user_id, screen_name, post_count=len(all_posts))
+            store.set_crawl_state(user_id, next_page, completed)
             total = store.count_posts(user_id)
-        logger.info(f"已写入 DuckDB: {db_path}（该用户累计 {total} 条）")
+
+        if completed:
+            logger.info(f"已抓完，写入 DuckDB: {db_path}（该用户累计 {total} 条）")
+        else:
+            logger.warning(
+                f"未抓完（在第 {next_page} 页中断），已写入 DuckDB: {db_path}"
+                f"（累计 {total} 条）。可加 --resume 从第 {next_page} 页续爬。"
+            )
         return db_path
     finally:
         crawler.close()
@@ -166,6 +186,8 @@ def main():
     sp_user.add_argument("--days", type=int, default=None, help="只爬最近N天（命中时间下限即提前停止翻页）")
     sp_user.add_argument("--full-text", action="store_true",
                          help="补全被截断的长文全文（会额外访问详情页，请求量更大）")
+    sp_user.add_argument("--resume", action="store_true",
+                         help="断点续爬：从上次被拦截的页码继续（需 DuckDB 记录）")
     sp_user.add_argument("--db", default=config.DUCKDB_PATH,
                          help=f"DuckDB 数据库文件路径（默认 {config.DUCKDB_PATH}）")
     sp_user.add_argument("--no-db", action="store_true", help="不写入 DuckDB")
@@ -192,7 +214,8 @@ def main():
             db_path = None if getattr(args, 'no_db', False) else getattr(args, 'db', None)
             result = run_user(args.user_id, args.max_pages,
                               getattr(args, 'days', None), getattr(args, 'all', False),
-                              db_path, getattr(args, 'full_text', False))
+                              db_path, getattr(args, 'full_text', False),
+                              getattr(args, 'resume', False))
         elif args.command == "search":
             run_search(args.keyword)
             return
