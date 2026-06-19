@@ -58,6 +58,13 @@ def build_where(f):
         params.append(list(f["targets"]))
     if f.get("needs_review"):
         conds.append("needs_review = true")
+    if f.get("search"):
+        conds.append(
+            "lower(coalesce(behavior_summary,'') || ' ' || coalesce(key_quote,'') || ' ' "
+            "|| coalesce(judgment,'') || ' ' || coalesce(judgment_basis,'') || ' ' "
+            "|| coalesce(scene,'') || ' ' || coalesce(polarity_reason,'')) LIKE ?"
+        )
+        params.append("%" + str(f["search"]).lower() + "%")
     if f.get("date_from"):
         conds.append("source_post_date >= ?")
         params.append(str(f["date_from"]))
@@ -134,7 +141,7 @@ def timeline(con, f):
     """, p)
 
 
-def card_table(con, f, limit=500):
+def card_table(con, f, limit=5000):
     where, p = build_where(f)
     return _df(con, f"""
         SELECT c.post_id, c.source_post_date AS post_date, c.concepts, c.targets,
@@ -146,3 +153,28 @@ def card_table(con, f, limit=500):
         ORDER BY c.source_post_date DESC NULLS LAST, c.post_id
         LIMIT {int(limit)}
     """, p)
+
+
+def count_cards(con, f):
+    where, p = build_where(f)
+    row = con.execute(f"SELECT count(*) FROM cards WHERE {where}", p).fetchone()
+    return row[0] if row else 0
+
+
+def card_page(con, f, limit=20, offset=0):
+    """分页取卡片全字段 + 原帖正文与链接，供浏览。"""
+    where, p = build_where(f)
+    return _df(con, f"""
+        SELECT c.post_id, c.card_idx, c.source_post_date AS post_date, c.event_date,
+               c.behavior_summary, c.concepts, c.targets, c.cycle,
+               c.polarity, c.polarity_reason, c.polarity_confidence AS confidence,
+               c.scene, c.key_quote, c.judgment, c.judgment_basis,
+               c.verification, c.error_type, c.needs_review,
+               p.text AS post_text,
+               'https://xueqiu.com' || coalesce(p.target, '') AS url
+        FROM cards c LEFT JOIN posts p ON c.post_id = p.post_id
+        WHERE {where}
+        ORDER BY c.source_post_date DESC NULLS LAST, c.post_id, c.card_idx
+        LIMIT {int(limit)} OFFSET {int(offset)}
+    """, p)
+
