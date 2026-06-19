@@ -133,6 +133,25 @@ class PostStore:
              _to_int(post_count), datetime.now()],
         )
 
+    def dedup(self):
+        """按 post_id 去重，保留最近抓取的一条，返回删除条数。
+
+        正常写入已通过主键 + INSERT OR REPLACE 自动去重；
+        此方法用于清理早期可能无主键/含重复的历史数据，可安全反复执行。
+        """
+        before = self.count_posts()
+        self._con.execute(
+            "DELETE FROM posts WHERE rowid NOT IN "
+            "(SELECT max(rowid) FROM posts GROUP BY post_id)"
+        )
+        after = self.count_posts()
+        removed = before - after
+        if removed:
+            logger.info(f"去重完成：删除 {removed} 条重复记录（{before} -> {after}）")
+        else:
+            logger.info(f"无重复记录（共 {after} 条）")
+        return removed
+
     def count_posts(self, user_id=None):
         if user_id is not None:
             r = self._con.execute(

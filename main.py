@@ -145,7 +145,7 @@ def run_search(keyword):
 
 def main():
     # 兼容旧用法：如果第一个参数不是 stock/user/search，自动当作 stock 子命令
-    if len(sys.argv) > 1 and sys.argv[1] not in ("stock", "user", "search", "-h", "--help"):
+    if len(sys.argv) > 1 and sys.argv[1] not in ("stock", "user", "search", "dedup", "-h", "--help"):
         sys.argv.insert(1, "stock")
 
     parser = argparse.ArgumentParser(description="雪球爬虫工具")
@@ -174,6 +174,11 @@ def main():
     sp_search = subparsers.add_parser("search", help="搜索雪球用户")
     sp_search.add_argument("keyword", help="搜索关键词（用户名）")
 
+    # dedup 子命令
+    sp_dedup = subparsers.add_parser("dedup", help="对 DuckDB 中的帖子按 post_id 去重")
+    sp_dedup.add_argument("--db", default=config.DUCKDB_PATH,
+                          help=f"DuckDB 数据库文件路径（默认 {config.DUCKDB_PATH}）")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -190,6 +195,12 @@ def main():
                               db_path, getattr(args, 'full_text', False))
         elif args.command == "search":
             run_search(args.keyword)
+            return
+        elif args.command == "dedup":
+            from storage import PostStore
+            with PostStore(args.db) as store:
+                removed = store.dedup()
+            print(f"\n去重完成，删除 {removed} 条重复记录")
             return
         else:
             parser.print_help()
