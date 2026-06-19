@@ -1,0 +1,5 @@
+# Streamlit 配置：固定卡片浏览器端口
+# 修改端口改这里即可；也可临时用 CLI 覆盖：
+#   streamlit run dashboard.py --server.port 9000 -- --db ./xueqiu.duckdb
+[server]
+port = 8502

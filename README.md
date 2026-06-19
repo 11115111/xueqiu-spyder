@@ -248,6 +248,9 @@ pip install -r requirements.txt   # 需 streamlit / pandas
 streamlit run dashboard.py -- --db ./xueqiu.duckdb
 ```
 
+> 默认端口 **8502**（在 `.streamlit/config.toml` 配置，改这里即可）。也可临时覆盖：
+> `streamlit run dashboard.py --server.port 9000 -- --db ./xueqiu.duckdb`
+
 - 侧栏筛选：全文搜索（复述/原文/判断/依据/盘面）+ 概念 / 正反例 / 周期 / 标的 / 置信度 / 仅看待复核 / 日期
 - 主区分页展示每张卡的完整字段：复述、概念/标的标签、`key_quote`、判断、正反例依据、判断依据、盘面、验证、错误类型、是否待复核
 - 每张卡可展开**原帖正文**并跳转**雪球**核对
