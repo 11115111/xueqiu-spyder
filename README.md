@@ -193,6 +193,9 @@ llm:
 想让密钥不落盘，可只在文件里写 `base_url`/`model`，`api_key` 用环境变量 `LLM_API_KEY` 提供。
 也可用 `--llm-config 路径` 指定其它配置文件。
 
+`api_key` 支持**多 key 轮询**（逗号分隔，如 `sk-a,sk-b,sk-c`）：请求按 key 轮流发出以分摊各 key 的限速，
+且某次失败重试会自动切到下一个 key。启动日志会显示加载到的 key 数（`keys N`）。
+
 分类口径见 `extract/taxonomy.yaml`（概念枚举 + 口语线索 + few-shot）。
 
 ### 运行

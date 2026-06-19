@@ -83,8 +83,19 @@ class LLMConfig:
             prompt_cache=_env("LLM_PROMPT_CACHE", "off"),
         )
 
+    @property
+    def api_key_list(self):
+        """支持逗号分隔的多 key，返回去空后的列表。"""
+        return [k.strip() for k in (self.api_key or "").split(",") if k.strip()]
+
     def validate(self):
-        missing = [k for k in ("base_url", "api_key", "model") if not getattr(self, k)]
+        missing = []
+        if not self.base_url:
+            missing.append("base_url")
+        if not self.api_key_list:
+            missing.append("api_key")
+        if not self.model:
+            missing.append("model")
         if missing:
             raise ValueError(
                 "缺少 LLM 配置: " + ", ".join(missing)

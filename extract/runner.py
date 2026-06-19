@@ -46,7 +46,7 @@ def run(db_path, taxonomy_path=None, mode="todo", limit=None, llm=None, cfg=None
             return summary
         logger.info(
             f"待处理 {len(posts)} 条，并发 {cfg.concurrency}，"
-            f"rpm {cfg.rpm if cfg.rpm else '不限'}，"
+            f"rpm {cfg.rpm if cfg.rpm else '不限'}，keys {len(cfg.api_key_list)}，"
             f"prompt_cache {cfg.prompt_cache}，模型 {cfg.model}"
         )
 

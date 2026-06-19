@@ -72,9 +72,22 @@ class LLMClient:
         self._url = f"{cfg.base_url}/chat/completions"
         self._limiter = limiter or RateLimiter(getattr(cfg, "rpm", 0))
         self._stats_lock = threading.Lock()
+        # 多 api_key 轮询（逗号分隔），用于分摊各 key 的限速
+        self._keys = cfg.api_key_list
+        self._key_lock = threading.Lock()
+        self._key_i = 0
         # 累计 token 用量，便于观察 prompt 缓存命中效果
         self.stats = {"calls": 0, "prompt_tokens": 0, "cached_tokens": 0,
                       "completion_tokens": 0}
+
+    def _next_key(self):
+        """线程安全轮询取下一个 api_key。"""
+        if len(self._keys) <= 1:
+            return self._keys[0]
+        with self._key_lock:
+            k = self._keys[self._key_i % len(self._keys)]
+            self._key_i += 1
+            return k
 
     def _system_message(self, system):
         """构造 system 消息；显式开启缓存时给 system 注入 cache_control。
@@ -122,14 +135,15 @@ class LLMClient:
                 {"role": "user", "content": user},
             ],
         }
-        headers = {
-            "Authorization": f"Bearer {self.cfg.api_key}",
-            "Content-Type": "application/json",
-        }
 
         last_err = None
         for attempt in range(self.cfg.max_retries + 1):
             self._limiter.acquire()  # 重试也受限流约束
+            # 每次（含重试）轮询取 key：失败重试会自动换下一个 key
+            headers = {
+                "Authorization": f"Bearer {self._next_key()}",
+                "Content-Type": "application/json",
+            }
             retry_after = None
             try:
                 resp = requests.post(
