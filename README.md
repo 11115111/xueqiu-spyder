@@ -258,6 +258,18 @@ streamlit run dashboard.py -- --db ./xueqiu.duckdb
 
 > 只读打开数据库，不影响爬虫/抽取。需先 `python -m extract run` 生成 `cards` 表。
 
+### 离线 HTML（手机离线用）
+
+不想装 Python/起服务、想在手机上离线翻卡片，可导出**单个自包含 HTML**：
+
+```bash
+python -m viz.export_html --db ./xueqiu.duckdb --out ./output/cards.html
+```
+
+把生成的 `cards.html` 拷到手机，用浏览器打开即可——数据内嵌在文件里，筛选/搜索全在本地完成，
+**无需网络、无需 Python**。功能与卡片浏览器一致：全文搜索 + 概念/周期/正反例/置信度/待复核筛选、
+卡片完整字段、可展开原帖、点链接回雪球（需联网）。数据更新时重新导出、再拷一次即可。
+
 ## 示例
 
 ```bash
